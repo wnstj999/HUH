@@ -21,10 +21,10 @@ build step.
 5. Select the `main` branch and the `/ (root)` folder, then save.
 6. Wait for GitHub to show the published site URL.
 
-For a repository named `lol-inhouse-manager`, the URL normally looks like:
+This repository is published at:
 
 ```text
-https://YOUR_GITHUB_USERNAME.github.io/lol-inhouse-manager/
+https://wnstj999.github.io/HUH/
 ```
 
 Use the published homepage URL as the Riot Developer Portal **Product URL**.
@@ -39,7 +39,7 @@ When Riot provides the verification token:
 3. Confirm that this address displays the exact token as plain text:
 
 ```text
-https://YOUR_GITHUB_USERNAME.github.io/lol-inhouse-manager/riot.txt
+https://wnstj999.github.io/HUH/riot.txt
 ```
 
 4. Complete verification in the Riot Developer Portal only after the updated file is live.
