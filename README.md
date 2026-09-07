@@ -11,6 +11,14 @@ build step.
 - `terms.html` — Terms of Service
 - `style.css` — shared responsive styling
 - `riot.txt` — placeholder for Riot's domain-verification token
+- `apps-script/WebApp.gs` — Google Apps Script server and Sheets data layer
+- `apps-script/Index.html` — organizer dashboard UI
+
+The owner-only organizer dashboard is deployed at:
+
+```text
+https://script.google.com/macros/s/AKfycbzSMepMfBolt5AsFWtbzNZFdZEDfBkH9Dlji3m7DFbL99iaAwDpcVnwcR8tlQ8Y7pFV/exec
+```
 
 ## Publish with GitHub Pages
 

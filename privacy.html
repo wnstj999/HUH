@@ -20,7 +20,7 @@
   <main class="policy-page">
     <p class="eyebrow">POLICY</p>
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: September 7, 2026</p>
+    <p class="updated">Last updated: September 8, 2026</p>
 
     <section>
       <h2>1. Scope</h2>
@@ -35,9 +35,10 @@
       <h2>2. Information we process</h2>
       <p>
         We may process Riot IDs supplied by community participants and League of Legends
-        ranked or match data returned by official Riot Games APIs. When Tournament API
-        access is approved, Tournament Codes and associated match results may also be
-        processed.
+        ranked or match data returned by official Riot Games APIs, plus historical solo
+        and flex peak-rank information available on public OP.GG profile pages. When
+        Tournament API access is approved, Tournament Codes and associated match results
+        may also be processed.
       </p>
     </section>
 
@@ -55,16 +56,18 @@
       <p>
         Information is not sold, used for advertising, or shared for commercial purposes.
         Access is limited to what is necessary for the community and its organizers. Data
-        may be processed by service providers used to operate the project and by Riot Games
-        through its official API services.
+        may be processed by service providers used to operate the project, by Riot Games
+        through its official API services, and by OP.GG when a public profile is requested.
       </p>
     </section>
 
     <section>
       <h2>5. Data collection methods</h2>
       <p>
-        The project uses participant-provided information and official Riot Games APIs.
-        It does not use external crawling or scraping to collect player information.
+        The project uses participant-provided information and official Riot Games APIs for
+        current rank data. Public OP.GG profile pages are queried only to obtain historical
+        solo and flex peak ranks. Results are cached to reduce repeated requests, and a
+        failed lookup does not overwrite the last stored historical value.
       </p>
     </section>
 
