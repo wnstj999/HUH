@@ -18,8 +18,10 @@ const APP = Object.freeze({
   logHeaders: ['timestamp','level','action','message','details']
 });
 
+// The original community spreadsheet is read-only for the web app.
+const APP_SHEET_STORAGE_ENABLED = false;
+
 function doGet() {
-  setupWebApp();
   return HtmlService.createTemplateFromFile('Index').evaluate()
     .setTitle('HUH 내전 관리')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -41,6 +43,7 @@ function doPost(e) {
 }
 
 function setupWebApp() {
+  if (!APP_SHEET_STORAGE_ENABLED) return { ok: false, disabled: true };
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -60,6 +63,14 @@ function setupWebApp() {
 }
 
 function getAppData() {
+  if (!APP_SHEET_STORAGE_ENABLED) {
+    return {
+      players: [], events: [], participants: [], matches: [],
+      tiers: APP.tiers.map(t => ({ name: t, score: APP.tierScores[t] })),
+      positions: APP.positions,
+      config: { apiConfigured: Boolean(PropertiesService.getScriptProperties().getProperty('RIOT_API_KEY')), tournamentConfigured: false, ownerOnly: true, storageDisabled: true }
+    };
+  }
   setupWebApp();
   return {
     players: readObjects_(APP.sheets.players).filter(p => String(p.active).toUpperCase() !== 'FALSE'),
@@ -74,6 +85,15 @@ function getAppData() {
       ownerOnly: true
     }
   };
+}
+
+function rollbackSheetChanges() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ['Players','Events','EventParticipants','Matches','Settings','ApiLogs'].forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    if (sheet) ss.deleteSheet(sheet);
+  });
+  return { ok: true, remainingSheets: ss.getSheets().map(s => s.getName()) };
 }
 
 function savePlayer(input) {
