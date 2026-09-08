@@ -40,7 +40,7 @@ export function applyCors(req: VercelRequest, res: VercelResponse): boolean {
     res.setHeader('Vary', 'Origin');
   }
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-HUH-Access-Token');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') { res.status(204).end(); return true; }
   if (origin && !allowed.includes(origin)) throw new HttpError(403, 'ORIGIN_NOT_ALLOWED', '허용되지 않은 요청 Origin입니다.');
   return false;
