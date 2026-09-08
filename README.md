@@ -58,7 +58,8 @@ npm run dev
 
 1. 무료 Supabase 프로젝트를 생성합니다.
 2. SQL Editor에서 `supabase/migrations/001_initial_schema.sql`을 한 번 실행합니다.
-3. Vercel 프로젝트 환경변수에 아래 값을 추가합니다.
+3. Data API → Settings에서 5개 테이블과 `create_inhouse_event`, `create_inhouse_match` 함수를 노출합니다. 자동 신규 테이블 노출은 끈 상태로 유지합니다.
+4. Vercel 프로젝트 환경변수에 아래 값을 추가합니다.
 
 ```text
 SUPABASE_URL=https://<project>.supabase.co

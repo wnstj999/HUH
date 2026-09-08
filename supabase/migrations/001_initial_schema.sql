@@ -133,5 +133,7 @@ end $$;
 
 revoke all on function public.create_inhouse_event(text, uuid[]) from public, anon, authenticated;
 revoke all on function public.create_inhouse_match(text, jsonb) from public, anon, authenticated;
+grant usage on schema public to service_role;
+grant all privileges on table public.players, public.inhouse_events, public.event_participants, public.inhouse_matches, public.match_participants to service_role;
 grant execute on function public.create_inhouse_event(text, uuid[]) to service_role;
 grant execute on function public.create_inhouse_match(text, jsonb) to service_role;
