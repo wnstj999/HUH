@@ -126,8 +126,39 @@ export function parseOpggHistoricalRanks(html: string): Pick<HistoricalRanks, 'h
       if (gameType?.game_type === 'SOLORANKED' || gameType?.game_type === 'FLEXRANKED') queues[gameType.game_type].push(...records);
     }
   }
-  if (!queues.SOLORANKED.length && !queues.FLEXRANKED.length) throw new HttpError(502, 'OPGG_PARSE_FAILED', 'OP.GG 과거 시즌 기록 구조를 확인할 수 없습니다.');
-  return { historicalSolo: bestRank(queues.SOLORANKED), historicalFlex: bestRank(queues.FLEXRANKED) };
+
+  // OP.GG 프로필 화면의 'Top tier' (역대 최고 티어) 뱃지 확인
+  let domTopSolo: HistoricalRank | null = null;
+  let domTopFlex: HistoricalRank | null = null;
+  $('span:contains("Top tier")').each((_, el) => {
+    const parent = $(el).parent();
+    const tierText = parent.find('strong').text().trim();
+    const lpText = parent.find('span').text().trim();
+    const match = tierText.match(/^([A-Za-z]+)(?:\s+(\d+|[IVXLCDM]+))?/);
+    if (!match) return;
+    const tier = match[1]!.toUpperCase();
+    const division = match[2] ?? null;
+    const lpMatch = lpText.match(/(\d+)\s*LP/i);
+    const lp = lpMatch ? Number(lpMatch[1]) : null;
+    const rankObj: HistoricalRank = { tier, division, lp, season: 'Peak' };
+    if (!domTopSolo) {
+      domTopSolo = rankObj;
+    } else if (!domTopFlex) {
+      domTopFlex = rankObj;
+    }
+  });
+
+  const bestSolo = bestRank(queues.SOLORANKED);
+  const bestFlex = bestRank(queues.FLEXRANKED);
+
+  const finalSolo = (!bestSolo || (domTopSolo && strength(domTopSolo) > strength(bestSolo))) ? domTopSolo ?? bestSolo : bestSolo;
+  const finalFlex = (!bestFlex || (domTopFlex && strength(domTopFlex) > strength(bestFlex))) ? domTopFlex ?? bestFlex : bestFlex;
+
+  if (!queues.SOLORANKED.length && !queues.FLEXRANKED.length && !domTopSolo && !domTopFlex) {
+    throw new HttpError(502, 'OPGG_PARSE_FAILED', 'OP.GG 과거 시즌 기록 구조를 확인할 수 없습니다.');
+  }
+
+  return { historicalSolo: finalSolo, historicalFlex: finalFlex };
 }
 
 export async function getOpggHistoricalRanks(riotId: string): Promise<HistoricalRanks> {
