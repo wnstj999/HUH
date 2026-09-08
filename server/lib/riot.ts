@@ -4,12 +4,6 @@ import { parseRiotId } from '../../src/lib/riotId.js';
 export interface RiotAccount { puuid: string; gameName: string; tagLine: string }
 export interface RiotLeagueEntry { queueType: string; tier: string; rank: string; leaguePoints: number; wins: number; losses: number }
 
-export function resolveRiotKey(requestKey: string | string[] | undefined): string {
-  const key = process.env.RIOT_API_KEY || (typeof requestKey === 'string' ? requestKey.trim() : '');
-  if (!key) throw new HttpError(400, 'RIOT_KEY_MISSING', 'Riot API Key가 설정되지 않았습니다.');
-  return key;
-}
-
 async function riotFetch<T>(url: string, key: string): Promise<T> {
   const response = await fetch(url, { headers: { 'X-Riot-Token': key, Accept: 'application/json' }, signal: AbortSignal.timeout(12_000) });
   if (!response.ok) {

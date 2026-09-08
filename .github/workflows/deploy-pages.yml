@@ -31,10 +31,14 @@ jobs:
       - name: Validate backend URL
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-        run: node -e "const value=process.env.VITE_API_BASE_URL; if(!value || new URL(value).protocol !== 'https:') throw new Error('Set the VITE_API_BASE_URL Actions variable to the HTTPS Vercel origin before deploying Pages.')"
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: node -e "for (const name of ['VITE_API_BASE_URL','VITE_SUPABASE_URL','VITE_SUPABASE_ANON_KEY']) if(!process.env[name]) throw new Error('Set '+name+' in GitHub Actions variables.'); if(new URL(process.env.VITE_API_BASE_URL).protocol !== 'https:') throw new Error('VITE_API_BASE_URL must use HTTPS.')"
       - run: npm run build
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

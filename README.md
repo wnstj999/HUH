@@ -15,9 +15,9 @@ GitHub Pages (React + TypeScript, /HUH/)
 - 프론트: Vite, React, TypeScript, HashRouter. `/HUH/` base path와 직접 새로고침을 안전하게 처리합니다.
 - 백엔드: `api/` 아래 Vercel TypeScript Functions. 브라우저에서 외부 API나 DB를 직접 호출하지 않습니다.
 - DB: `supabase/migrations/001_initial_schema.sql`. 플레이어, 이벤트, 이벤트 참가자, 경기, 경기 참가자를 저장합니다.
-- 인증: `HUH_ADMIN_TOKEN`을 설정하면 health check를 제외한 모든 API가 `X-HUH-Access-Token`을 요구합니다. 사용자는 Settings의 **운영 접근 키**에 같은 값을 입력합니다.
+- 인증: Supabase Auth 이메일/비밀번호 로그인 세션을 사용하며, Vercel Functions가 Bearer 토큰을 매 요청 검증합니다.
 
-GitHub Pages의 UI 파일과 `/api/health`는 공개되어도 플레이어·경기 데이터는 Vercel의 운영 접근 키 뒤에 있습니다. 단, 현재 방식은 소규모 비공개 커뮤니티용 공유 키 인증입니다. 개인별 계정·권한·감사 로그가 필요한 공개 서비스로 확장할 때는 Supabase Auth 등 사용자 인증으로 교체해야 합니다. `HUH_ADMIN_TOKEN`을 비워 두면 API가 공개되므로 운영 배포에서는 반드시 설정하십시오.
+GitHub Pages의 UI 파일과 `/api/health`는 공개되어도 플레이어·경기 데이터는 로그인 뒤에 있습니다. Supabase Dashboard에서 만든 운영자 계정만 사용하고 공개 회원가입은 비활성화하십시오. 기존 `HUH_ADMIN_TOKEN`은 전환용 fallback일 뿐이며 Auth 배포 확인 후 제거합니다.
 
 프론트 주소: <https://wnstj999.github.io/HUH/>
 
@@ -57,8 +57,8 @@ npm run dev
 ## Supabase 설정
 
 1. 무료 Supabase 프로젝트를 생성합니다.
-2. SQL Editor에서 `supabase/migrations/001_initial_schema.sql`을 한 번 실행합니다.
-3. Data API → Settings에서 5개 테이블과 `create_inhouse_event`, `create_inhouse_match` 함수를 노출합니다. 자동 신규 테이블 노출은 끈 상태로 유지합니다.
+2. SQL Editor에서 `supabase/migrations/001_initial_schema.sql`, `002_player_season_rank_history.sql`, `003_auth_and_encrypted_settings.sql` 순서로 실행합니다.
+3. Data API → Settings에서 운영 테이블과 `create_inhouse_event`, `create_inhouse_match` 함수를 노출합니다. `app_settings`는 RLS 정책 없이 service role만 접근하도록 유지합니다.
 4. Vercel 프로젝트 환경변수에 아래 값을 추가합니다.
 
 ```text
@@ -79,9 +79,11 @@ SUPABASE_URL=...
 SUPABASE_SECRET_KEY=...
 # 또는 기존 프로젝트의 SUPABASE_SERVICE_ROLE_KEY
 RIOT_API_KEY=                  # Production Key가 생긴 뒤 선택
+SETTINGS_ENCRYPTION_KEY=<32자 이상의 임의 문자열>
 OPGG_SCRAPING_ENABLED=true
 TOURNAMENT_API_ENABLED=false
-HUH_ADMIN_TOKEN=<길고 임의적인 운영 접근 키>
+# 전환 완료 뒤 삭제
+HUH_ADMIN_TOKEN=
 ALLOWED_ORIGINS=https://wnstj999.github.io,http://localhost:5173,http://localhost:4173
 ```
 
@@ -94,10 +96,12 @@ ALLOWED_ORIGINS=https://wnstj999.github.io,http://localhost:5173,http://localhos
 `.github/workflows/deploy-pages.yml`이 `main` push에서 테스트와 빌드를 거친 뒤 `dist/`를 Pages에 배포합니다.
 
 1. GitHub 저장소 Settings → Pages → Source를 **GitHub Actions**로 설정합니다.
-2. Settings → Secrets and variables → Actions → Variables에 아래 값을 추가합니다.
+2. Settings → Secrets and variables → Actions → Variables에 아래 값을 추가합니다. Anon key(Publishable key)는 브라우저 공개용 키이며 Secret/Service Role key를 넣으면 안 됩니다.
 
 ```text
 VITE_API_BASE_URL=https://<vercel-domain>
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=<publishable-or-anon-key>
 ```
 
 3. `main`에 push하거나 Actions에서 `Deploy GitHub Pages`를 실행합니다.
@@ -106,18 +110,19 @@ Vite base는 `/HUH/`이며 앱 라우팅은 HashRouter를 사용하므로 `/HUH/
 
 ## 최초 배포 순서와 확인
 
-1. Supabase 프로젝트를 만들고 migration SQL을 실행합니다.
-2. Vercel에 서버 환경변수를 넣고 배포합니다.
-3. 브라우저에서 `https://<vercel-domain>/api/health`를 열어 `backend=true`, `database=true`를 확인합니다. Riot 서버 키를 쓰지 않는다면 `riotConfigured=false`는 정상입니다.
-4. GitHub Actions 변수 `VITE_API_BASE_URL`에 Vercel origin을 넣고 Pages workflow를 실행합니다.
-5. Pages의 Settings에서 Vercel의 `HUH_ADMIN_TOKEN`과 Riot Personal API Key를 입력하고 연결 테스트를 실행합니다.
-6. 플레이어 한 명을 등록하고 새로고침 후에도 보이는지 확인한 뒤, 참가 토글과 Riot 데이터 갱신을 점검합니다.
+1. Supabase 프로젝트를 만들고 migration SQL 3개를 순서대로 실행합니다.
+2. Supabase Authentication → Users에서 운영자 이메일/비밀번호 계정을 만들고 공개 회원가입을 끕니다.
+3. Vercel에 서버 환경변수를 넣고 배포합니다.
+4. 브라우저에서 `https://<vercel-domain>/api/health`를 열어 `backend=true`, `database=true`를 확인합니다.
+5. GitHub Actions 변수 3개를 설정하고 Pages workflow를 실행합니다.
+6. Pages에서 운영자 계정으로 로그인한 뒤 Settings에서 Riot Personal API Key를 한 번 중앙 저장합니다.
+7. 다른 브라우저에서 같은 계정으로 로그인해 플레이어 목록과 Riot 연결 상태가 같은지 확인합니다.
 
-운영 접근 키를 교체하면 이미 저장된 모든 브라우저의 키도 Settings에서 새 값으로 바꿔야 합니다.
+로그인 계정과 Riot API Key는 중앙 관리되므로 브라우저마다 운영 키를 다시 입력하지 않습니다.
 
-## Riot API Key 입력과 조회 흐름
+## 로그인과 Riot API Key
 
-Settings에서 Personal API Key를 입력하고 `연결 테스트`를 누릅니다. 기본값은 `sessionStorage`이며, 사용자가 `이 브라우저에서 기억하기`를 선택한 경우에만 `localStorage`를 사용합니다. 화면에는 저장된 전체 키를 다시 노출하지 않습니다.
+Supabase Auth 로그인 세션은 브라우저에 안전하게 유지되고 백엔드는 토큰으로 사용자를 검증합니다. Settings에서 입력한 Riot Personal API Key는 서버에서 먼저 Riot 연결 검사를 통과한 뒤 AES-256-GCM으로 암호화되어 `app_settings` 테이블에 저장됩니다. 암호화 원문과 복호화된 키는 API 응답에 포함되지 않습니다. 암호화 마스터 키인 `SETTINGS_ENCRYPTION_KEY`는 Vercel에만 둡니다.
 
 ```text
 Riot ID (GameName#TagLine)
@@ -129,7 +134,7 @@ Riot ID (GameName#TagLine)
   → RANKED_SOLO_5x5 저장
 ```
 
-서버의 `RIOT_API_KEY`가 있으면 그 키가 우선하며, 없을 때만 요청의 `X-Riot-API-Key`를 사용합니다. 키는 로그, 오류, DB에 기록하지 않습니다. Development Key는 Riot 정책상 주기적으로 만료되므로 Settings의 테스트 결과에서 401, 403, 404, 429를 구분합니다.
+DB에 저장된 암호화 Riot 키가 있으면 그 키를 사용하고, 아직 저장하지 않은 경우에만 Vercel의 `RIOT_API_KEY`를 fallback으로 사용합니다. Development Key는 Riot 정책상 주기적으로 만료되므로 만료 시 어느 컴퓨터에서든 Settings에서 새 키로 한 번 교체하면 됩니다.
 
 ## OP.GG 조회 흐름
 
@@ -160,8 +165,9 @@ OPGG_LIVE_TEST=true npm test
 ## 보안 메모
 
 - `.env`, `.env.*`, Vercel 로컬 설정, 로그와 빌드 결과는 Git에서 제외됩니다.
-- Personal Riot Key와 운영 접근 키는 브라우저 저장소 외에 영구 저장하지 않습니다.
+- Riot API Key는 AES-256-GCM 암호문으로만 DB에 저장하고 `SETTINGS_ENCRYPTION_KEY`는 Vercel 환경변수에만 둡니다.
+- Supabase 공개 회원가입을 끄고 Dashboard에서 만든 운영자 계정만 사용합니다.
 - CORS는 GitHub Pages origin과 명시한 localhost만 허용합니다. 브라우저 Origin에는 URL path가 포함되지 않으므로 `/HUH/`만 CORS 수준에서 구분할 수는 없습니다.
-- 공개 GitHub Pages에 연결할 때는 반드시 `HUH_ADMIN_TOKEN`을 설정하십시오.
+- Auth 전환 확인 후 임시 `HUH_ADMIN_TOKEN`을 제거해 로그인만 허용합니다.
 
 이 프로젝트는 Riot Games의 공식 서비스 또는 승인된 프로젝트가 아니며 Riot Games의 공식 의견을 나타내지 않습니다.

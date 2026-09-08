@@ -25,14 +25,23 @@ describe('server HTTP boundary', () => {
     expect(response.body).toMatchObject({ error: { code: 'INVALID_RIOT_ID' } });
   });
 
-  it('requires the configured operations access key', async () => {
+  it('requires a Supabase login when no valid credential is supplied', async () => {
     process.env.HUH_ADMIN_TOKEN = 'test-only-access-key';
     const endpoint = handler(async (_request, response) => { response.status(200).json({ ok: true }); });
     const request: VercelRequest = { method: 'GET', headers: {}, query: {} };
     const response = new ResponseMock();
     await endpoint(request, response);
     expect(response.code).toBe(401);
-    expect(response.body).toMatchObject({ error: { code: 'ACCESS_DENIED' } });
+    expect(response.body).toMatchObject({ error: { code: 'AUTH_REQUIRED' } });
+  });
+
+  it('temporarily accepts the legacy access key during rollout', async () => {
+    process.env.HUH_ADMIN_TOKEN = 'test-only-access-key';
+    const endpoint = handler(async (_request, response) => { response.status(200).json({ ok: true }); });
+    const request: VercelRequest = { method: 'GET', headers: { 'x-huh-access-token': 'test-only-access-key' }, query: {} };
+    const response = new ResponseMock();
+    await endpoint(request, response);
+    expect(response.code).toBe(200);
   });
 
   it('redacts configured secrets from unexpected errors', () => {

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type PropsWithChildren, type ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { NavLink, Route, Routes, useNavigate } from 'react-router-dom';
-import { Activity, BarChart3, CalendarPlus, ChevronDown, CircleGauge, History, Languages, Pencil, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Activity, BarChart3, CalendarPlus, ChevronDown, CircleGauge, History, Languages, LogIn, LogOut, Pencil, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useI18n, type MessageKey } from './i18n';
 import { api, API_BASE_URL } from './lib/api';
+import { authClient, authConfigured, signIn, signOut } from './lib/auth';
 import { formatDate, formatDuration, formatRank } from './lib/format';
-import { getAccessToken, getRememberKeys, getRiotApiKey, maskKey, saveBrowserKeys } from './lib/storage';
+import { clearLegacyAccessKey, clearLegacyBrowserKeys, getLegacyRiotKey } from './lib/storage';
 import { buildBalancedTeams, REQUIRED_POSITIONS, swapAssignments } from './lib/teamBalancer';
 import { parseRiotId } from './lib/riotId';
 import { TIER_SCORES, type BalancedTeams, type HistoricalRank, type HealthStatus, type InhouseMatch, type InhouseTier, type MatchParticipant, type Player, type PlayerInput, type Position, type SeasonRankRecord } from './types';
@@ -35,7 +37,7 @@ function StatusDot({ ok, waiting = false }: { ok: boolean; waiting?: boolean }) 
   return <span className={`status-dot ${ok ? 'ok' : waiting ? 'waiting' : 'bad'}`} aria-hidden="true" />;
 }
 
-function Shell({ children }: PropsWithChildren) {
+function Shell({ children, userEmail, onSignOut }: PropsWithChildren<{ userEmail: string; onSignOut: () => void }>) {
   const { language, setLanguage, t } = useI18n();
   const nav: Array<[string, MessageKey, ReactNode]> = [
     ['/', 'dashboard', <CircleGauge />], ['/players', 'players', <Users />], ['/builder', 'builder', <CalendarPlus />],
@@ -52,7 +54,7 @@ function Shell({ children }: PropsWithChildren) {
     <div className="content-column">
       <header className="topbar">
         <div className="live-label"><span className="pulse" /> LIVE OPERATIONS</div>
-        <button className="language-toggle" onClick={() => setLanguage(language === 'ko' ? 'en' : 'ko')} aria-label="Change language"><Languages size={16} /><strong className={language === 'ko' ? 'on' : ''}>KR</strong><span>|</span><strong className={language === 'en' ? 'on' : ''}>EN</strong></button>
+        <div className="topbar-actions"><span className="user-email">{userEmail}</span><button className="language-toggle" onClick={() => setLanguage(language === 'ko' ? 'en' : 'ko')} aria-label="Change language"><Languages size={16} /><strong className={language === 'ko' ? 'on' : ''}>KR</strong><span>|</span><strong className={language === 'en' ? 'on' : ''}>EN</strong></button><button className="language-toggle" onClick={onSignOut}><LogOut size={16} />{t('signOut')}</button></div>
       </header>
       <main className="main-content">{children}</main>
       <footer><span>{t('footer')}</span><NavLink to="/privacy">{t('privacy')}</NavLink><NavLink to="/terms">{t('terms')}</NavLink></footer>
@@ -80,7 +82,7 @@ function Dashboard({ data, loading, error, reload }: ReturnType<typeof useAppDat
       <Metric label={t('registered')} value={activePlayers.length} hint="PLAYERS" />
       <Metric label={t('participating')} value={activePlayers.filter((player) => player.participating).length} hint="TODAY" accent />
       <Metric label={t('matches')} value={data.matches.length} hint="RECORDED" />
-      <Metric label={t('apiStatus')} value={data.health?.riotConfigured || getRiotApiKey() ? t('connected') : t('notConfigured')} hint="RIOT" status={Boolean(data.health?.riotConfigured || getRiotApiKey())} />
+      <Metric label={t('apiStatus')} value={data.health?.riotConfigured ? t('connected') : t('notConfigured')} hint="RIOT" status={Boolean(data.health?.riotConfigured)} />
     </section>
     <section className="split-grid">
       <article className="panel wide"><div className="panel-head"><h2>{t('recentMatches')}</h2><NavLink className="text-link" to="/history">{t('history')} →</NavLink></div>
@@ -191,24 +193,44 @@ function StatsPage({ data }: ReturnType<typeof useAppData>) {
 }
 
 function SettingsPage({ data, reload }: ReturnType<typeof useAppData>) {
-  const { t } = useI18n(); const [savedRiotKey, setSavedRiotKey] = useState(getRiotApiKey()); const [savedAccessKey, setSavedAccessKey] = useState(getAccessToken()); const [riotKey, setRiotKey] = useState(''); const [accessKey, setAccessKey] = useState(''); const [remember, setRemember] = useState(getRememberKeys()); const [result, setResult] = useState(''); const [testing, setTesting] = useState(false);
-  function persist() { const nextRiot = riotKey || savedRiotKey; const nextAccess = accessKey || savedAccessKey; saveBrowserKeys(nextRiot, nextAccess, remember); setSavedRiotKey(nextRiot); setSavedAccessKey(nextAccess); setRiotKey(''); setAccessKey(''); }
-  function save() { persist(); setResult(t('save')); void reload(); }
-  async function test() { persist(); setTesting(true); try { const response = await api.testRiot(); setResult(response.message); } catch (cause) { setResult(cause instanceof Error ? cause.message : String(cause)); } finally { setTesting(false); } }
-  return <><PageHeader title={t('settings')} kicker="CONNECTIONS & SECURITY" /><section className="settings-grid"><article className="panel"><h2>API CREDENTIALS</h2><p className="helper">{t('keySecurity')}</p><Field label={t('riotApiKey')}><input type="password" className="input" value={riotKey} onChange={(event) => setRiotKey(event.target.value)} placeholder={savedRiotKey ? maskKey(savedRiotKey) : 'RGAPI-…'} autoComplete="off" /></Field><Field label={t('accessKey')}><input type="password" className="input" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} placeholder={savedAccessKey ? maskKey(savedAccessKey) : ''} autoComplete="off" /></Field><label className="check remember"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />{t('rememberBrowser')}</label><div className="button-row"><button className="button secondary" disabled={testing} onClick={test}><Activity size={16} />{t('testConnection')}</button><button className="button primary" onClick={save}><Save size={16} />{t('saveSession')}</button></div>{result && <div className="connection-result">{result}</div>}</article><article className="panel"><div className="panel-head"><h2>SERVICE STATUS</h2><span className="endpoint">{API_BASE_URL}</span></div><StatusLine label={t('backend')} ok={Boolean(data.health?.backend)} /><StatusLine label={t('database')} ok={Boolean(data.health?.database)} /><StatusLine label={t('apiStatus')} ok={Boolean(data.health?.riotConfigured || savedRiotKey)} /><StatusLine label={t('opgg')} ok={Boolean(data.health?.opggEnabled)} /><StatusLine label={t('tournamentApi')} ok={false} waiting value={t('tournamentWaiting')} /></article></section></>;
+  const { t } = useI18n();
+  const [riotKey, setRiotKey] = useState(getLegacyRiotKey());
+  const [configured, setConfigured] = useState(Boolean(data.health?.riotConfigured));
+  const [result, setResult] = useState('');
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    void api.riotKeyStatus().then((status) => setConfigured(status.configured)).catch(() => undefined);
+  }, []);
+
+  async function save() {
+    setTesting(true); setResult('');
+    try {
+      await api.saveRiotKey(riotKey);
+      clearLegacyBrowserKeys(); setRiotKey(''); setConfigured(true); setResult(t('centralKeySaved')); await reload();
+    } catch (cause) { setResult(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setTesting(false); }
+  }
+  async function test() {
+    setTesting(true); setResult('');
+    try { const response = await api.testRiot(); setResult(response.message); }
+    catch (cause) { setResult(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setTesting(false); }
+  }
+  return <><PageHeader title={t('settings')} kicker="CONNECTIONS & SECURITY" /><section className="settings-grid"><article className="panel"><h2>RIOT API</h2><p className="helper">{t('keySecurity')}</p><Field label={t('riotApiKey')}><input type="password" className="input" value={riotKey} onChange={(event) => setRiotKey(event.target.value)} placeholder={configured ? t('centralKeyConfigured') : 'RGAPI-…'} autoComplete="new-password" /></Field><div className="button-row settings-buttons"><button className="button secondary" disabled={testing || !configured} onClick={test}><Activity size={16} />{t('testConnection')}</button><button className="button primary" disabled={testing || !riotKey.trim()} onClick={save}><Save size={16} />{t('saveCentral')}</button></div>{result && <div className="connection-result">{result}</div>}</article><article className="panel"><div className="panel-head"><h2>SERVICE STATUS</h2><span className="endpoint">{API_BASE_URL}</span></div><StatusLine label={t('backend')} ok={Boolean(data.health?.backend)} /><StatusLine label={t('database')} ok={Boolean(data.health?.database)} /><StatusLine label={t('apiStatus')} ok={configured} /><StatusLine label={t('opgg')} ok={Boolean(data.health?.opggEnabled)} /><StatusLine label={t('tournamentApi')} ok={false} waiting value={t('tournamentWaiting')} /></article></section></>;
 }
 
 function PolicyPage({ kind }: { kind: 'privacy' | 'terms' }) {
   const { t, language } = useI18n();
   const privacy = language === 'ko' ? [
     ['1. 처리 범위', 'HUH는 비공개 League of Legends 내전 운영을 위해 커뮤니티 참가자가 제공한 정보를 처리합니다.'],
-    ['2. 처리하는 정보', 'Riot ID, PUUID, Riot API의 현재 랭크 데이터, OP.GG 공개 프로필의 과거 솔로·자유랭크 기록, 내전 참가·팀·경기·개인 기록을 처리합니다. Riot API Key와 운영 접근 키는 선택한 브라우저 저장소에만 보관되며 DB에 저장하지 않습니다.'],
+    ['2. 처리하는 정보', 'Riot ID, PUUID, Riot API의 현재 랭크 데이터, OP.GG 공개 프로필의 과거 솔로·자유랭크 기록, 내전 참가·팀·경기·개인 기록과 운영자 로그인 이메일을 처리합니다. Riot API Key는 서버에서 암호화한 뒤 DB에 저장하며 브라우저에 원문을 반환하지 않습니다.'],
     ['3. 이용 목적', '참가자 식별, 5v5 팀 편성, 현재·과거 랭크 확인, 내전 전적 및 통계 제공에만 사용합니다.'],
     ['4. 외부 처리', '현재 랭크 조회 시 Riot Games API로 Riot ID 또는 PUUID가 전달되고, 과거 기록 조회 시 OP.GG 공개 프로필을 서버에서 요청합니다. 운영 데이터는 Supabase에 저장됩니다.'],
     ['5. 보관과 삭제', '운영에 필요한 기간 동안 보관하며, 커뮤니티 운영자는 플레이어를 비활성화하거나 관련 기록을 정정할 수 있습니다. 법적 의무가 없는 한 참가자는 운영자에게 삭제를 요청할 수 있습니다.'],
   ] : [
     ['1. Scope', 'HUH processes participant-provided information to operate a private League of Legends inhouse community.'],
-    ['2. Information processed', 'We process Riot IDs, PUUIDs, current rank data from Riot APIs, historical solo and flex records from public OP.GG profiles, and participation, team, match, and player statistics. Riot and operations access keys remain only in the selected browser storage and are not stored in the database.'],
+    ['2. Information processed', 'We process Riot IDs, PUUIDs, current rank data from Riot APIs, historical solo and flex records from public OP.GG profiles, participation, team, match and player statistics, and operator login email addresses. Riot API Keys are encrypted by the server before database storage and plaintext is never returned to the browser.'],
     ['3. Purpose', 'Information is used only for participant identification, balanced 5v5 team creation, rank display, match records, and player statistics.'],
     ['4. Service providers', 'Riot ID or PUUID is sent to Riot Games APIs for current ranks. The backend requests public OP.GG profiles for historical records. Operational records are stored in Supabase.'],
     ['5. Retention and removal', 'Records are retained while needed to operate the community. Organizers can deactivate players or correct records, and participants may request removal where no legal obligation requires retention.'],
@@ -230,7 +252,42 @@ function PolicyPage({ kind }: { kind: 'privacy' | 'terms' }) {
   return <article className="policy"><PageHeader title={t(kind === 'privacy' ? 'privacyTitle' : 'termsTitle')} kicker="HUH LEGAL" /><p className="policy-updated">{t('lastUpdated')}</p>{sections.map(([title, body]) => <section key={title}><h2>{title}</h2><p>{body}</p></section>)}</article>;
 }
 
-export function App() {
+function LoginPage({ loading }: { loading: boolean }) {
+  const { language, setLanguage, t } = useI18n();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError('');
+    try { await signIn(email, password); }
+    catch { setError(t('loginFailed')); }
+    finally { setBusy(false); }
+  }
+
+  return <main className="login-page"><section className="login-card"><div className="login-brand"><span className="brand-mark">H</span><div><strong>HUH</strong><small>INHOUSE CONTROL</small></div></div><button className="language-toggle login-language" onClick={() => setLanguage(language === 'ko' ? 'en' : 'ko')}><Languages size={16} />{language === 'ko' ? 'EN' : 'KR'}</button><p className="kicker">PRIVATE OPERATIONS</p><h1>{t('loginTitle')}</h1><p className="helper">{t('loginDescription')}</p>{!authConfigured && <Alert message={t('authNotConfigured')} />}{error && <Alert message={error} />}<form className="login-form" onSubmit={submit}><Field label={t('email')}><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></Field><Field label={t('password')}><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></Field><button className="button primary full" disabled={loading || busy || !authConfigured}><LogIn size={16} />{loading ? t('loading') : t('signIn')}</button></form></section></main>;
+}
+
+function AuthenticatedApp({ session }: { session: Session }) {
   const appData = useAppData();
-  return <Shell><Routes><Route path="/" element={<Dashboard {...appData} />} /><Route path="/players" element={<PlayersPage {...appData} />} /><Route path="/builder" element={<BuilderPage {...appData} />} /><Route path="/history" element={<HistoryPage {...appData} />} /><Route path="/stats" element={<StatsPage {...appData} />} /><Route path="/settings" element={<SettingsPage {...appData} />} /><Route path="/privacy" element={<PolicyPage kind="privacy" />} /><Route path="/terms" element={<PolicyPage kind="terms" />} /><Route path="*" element={<Dashboard {...appData} />} /></Routes></Shell>;
+  return <Shell userEmail={session.user.email ?? ''} onSignOut={() => { void signOut(); }}><Routes><Route path="/" element={<Dashboard {...appData} />} /><Route path="/players" element={<PlayersPage {...appData} />} /><Route path="/builder" element={<BuilderPage {...appData} />} /><Route path="/history" element={<HistoryPage {...appData} />} /><Route path="/stats" element={<StatsPage {...appData} />} /><Route path="/settings" element={<SettingsPage {...appData} />} /><Route path="/privacy" element={<PolicyPage kind="privacy" />} /><Route path="/terms" element={<PolicyPage kind="terms" />} /><Route path="*" element={<Dashboard {...appData} />} /></Routes></Shell>;
+}
+
+export function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    clearLegacyAccessKey();
+    if (!authClient) { setLoading(false); return; }
+    void authClient.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
+    const { data: listener } = authClient.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession); setLoading(false);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  if (!session) return <LoginPage loading={loading} />;
+  return <AuthenticatedApp session={session} />;
 }

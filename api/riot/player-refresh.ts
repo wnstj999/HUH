@@ -3,7 +3,8 @@ import { handler, bodyAsObject, HttpError, requireMethod } from '../../server/li
 import { mapPlayer } from '../../server/lib/mappers.js';
 import { getFowRankHistory, rankStrength, type HistoricalRank } from '../../server/lib/fow.js';
 import { getOpggHistoricalRanks } from '../../server/lib/opgg.js';
-import { getRiotAccount, getSoloRank, resolveRiotKey } from '../../server/lib/riot.js';
+import { getRiotAccount, getSoloRank } from '../../server/lib/riot.js';
+import { resolveRiotKey } from '../../server/lib/settings.js';
 
 export default handler(async (req, res) => {
   requireMethod(req, ['POST']);
@@ -21,7 +22,7 @@ export default handler(async (req, res) => {
   // Riot와 OP.GG는 서로 독립적인 데이터 소스다. 한쪽 장애나 키 만료가
   // 다른 쪽의 정상 결과 저장을 막지 않도록 각각 별도로 처리한다.
   try {
-    const key = resolveRiotKey(req.headers['x-riot-api-key']);
+    const key = await resolveRiotKey();
     const account = await getRiotAccount(resolvedRiotId, key);
     const solo = await getSoloRank(account.puuid, key);
     resolvedRiotId = `${account.gameName}#${account.tagLine}`;
