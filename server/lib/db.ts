@@ -3,7 +3,7 @@ import { HttpError } from './http.js';
 
 export function db() {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = process.env.SUPABASE_BACKEND_KEY_2 || process.env.SUPABASE_BACKEND_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new HttpError(503, 'DATABASE_NOT_CONFIGURED', 'Database 환경변수가 설정되지 않았습니다.');
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
