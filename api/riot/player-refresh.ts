@@ -36,7 +36,10 @@ export default handler(async (req, res) => {
     warnings.push(error instanceof Error ? error.message : 'Riot 현재 랭크 조회에 실패했습니다.');
   }
 
-  const [fowResult, opggResult] = await Promise.allSettled([getFowRankHistory(resolvedRiotId), getOpggHistoricalRanks(resolvedRiotId)]);
+  const [fowResult, opggResult] = await Promise.allSettled([
+    getFowRankHistory(resolvedRiotId, true),
+    getOpggHistoricalRanks(resolvedRiotId, true)
+  ]);
   const fowHistory = fowResult.status === 'fulfilled' ? fowResult.value : null;
   const opggHistory = opggResult.status === 'fulfilled' ? opggResult.value : null;
   if (fowHistory || opggHistory) {

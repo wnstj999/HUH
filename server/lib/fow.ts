@@ -52,12 +52,12 @@ export function parseFowRankHistory(html: string): Pick<FowRankHistory, 'solo' |
   return { ...result, historicalSolo: best(result.solo), historicalFlex: best(result.flex) };
 }
 
-export async function getFowRankHistory(riotId: string): Promise<FowRankHistory> {
+export async function getFowRankHistory(riotId: string, bypassCache = false): Promise<FowRankHistory> {
   if (process.env.FOW_SCRAPING_ENABLED?.toLowerCase() === 'false') throw new HttpError(503, 'FOW_DISABLED', 'FOW 조회가 비활성화되어 있습니다.');
   const { gameName, tagLine } = parseRiotId(riotId);
   const sourceUrl = `https://www.fow.lol/find/kr/${encodeURIComponent(gameName)}-${encodeURIComponent(tagLine)}`;
   const cached = cache.get(sourceUrl.toLowerCase());
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (!bypassCache && cached && cached.expiresAt > Date.now()) return cached.value;
   const response = await fetch(sourceUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; HUH-Inhouse/1.0)', 'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8' }, signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new HttpError(502, 'FOW_REQUEST_FAILED', `FOW 요청이 실패했습니다. (${response.status})`);
   const value = { ...parseFowRankHistory(await response.text()), sourceUrl, fetchedAt: new Date().toISOString() };

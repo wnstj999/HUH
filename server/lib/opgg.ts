@@ -137,7 +137,8 @@ export function parseOpggHistoricalRanks(html: string): Pick<HistoricalRanks, 'h
     const match = tierText.match(/^([A-Za-z]+)(?:\s+(\d+|[IVXLCDM]+))?/);
     if (!match) return;
     const tier = match[1]!.toUpperCase();
-    const division = match[2] ?? null;
+    const divisionMap: Record<string, string> = { I: '1', II: '2', III: '3', IV: '4', '1': '1', '2': '2', '3': '3', '4': '4' };
+    const division = match[2] ? divisionMap[match[2].toUpperCase()] ?? match[2] : null;
     const lpMatch = lpText.match(/(\d+)\s*LP/i);
     const lp = lpMatch ? Number(lpMatch[1]) : null;
     const rankObj: HistoricalRank = { tier, division, lp, season: 'Peak' };
@@ -161,13 +162,13 @@ export function parseOpggHistoricalRanks(html: string): Pick<HistoricalRanks, 'h
   return { historicalSolo: finalSolo, historicalFlex: finalFlex };
 }
 
-export async function getOpggHistoricalRanks(riotId: string): Promise<HistoricalRanks> {
+export async function getOpggHistoricalRanks(riotId: string, bypassCache = false): Promise<HistoricalRanks> {
   if (process.env.OPGG_SCRAPING_ENABLED?.toLowerCase() !== 'true') throw new HttpError(503, 'OPGG_DISABLED', 'OP.GG 조회가 비활성화되어 있습니다.');
   const { gameName, tagLine } = parseRiotId(riotId);
   const sourceUrl = `https://op.gg/lol/summoners/kr/${encodeURIComponent(gameName)}-${encodeURIComponent(tagLine)}`;
   const key = sourceUrl.toLocaleLowerCase();
   const cached = cache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (!bypassCache && cached && cached.expiresAt > Date.now()) return cached.value;
   const response = await fetch(sourceUrl, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; HUH-Inhouse/1.0)', 'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8' },
     signal: AbortSignal.timeout(15_000),
