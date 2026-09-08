@@ -130,7 +130,7 @@ export function parseOpggHistoricalRanks(html: string): Pick<HistoricalRanks, 'h
   // OP.GG 프로필 화면의 'Top tier' (역대 최고 티어) 뱃지 확인
   let domTopSolo: HistoricalRank | null = null;
   let domTopFlex: HistoricalRank | null = null;
-  $('span:contains("Top tier")').each((_, el) => {
+  $('span:contains("Top tier"), span:contains("최고 티어")').each((_, el) => {
     const parent = $(el).parent();
     const tierText = parent.find('strong').text().trim();
     const lpText = parent.find('span').text().trim();
@@ -142,7 +142,17 @@ export function parseOpggHistoricalRanks(html: string): Pick<HistoricalRanks, 'h
     const lpMatch = lpText.match(/(\d+)\s*LP/i);
     const lp = lpMatch ? Number(lpMatch[1]) : null;
     const rankObj: HistoricalRank = { tier, division, lp, season: 'Peak' };
-    if (!domTopSolo) {
+
+    // 부모 섹션의 텍스트로 솔로랭크 / 자유랭크 구분 (없으면 순서대로 Solo -> Flex)
+    const sectionText = $(el).closest('section, div.flex-col').text();
+    const isFlex = /자유랭크|Ranked\s*Flex/i.test(sectionText);
+    const isSolo = /솔로랭크|Ranked\s*Solo/i.test(sectionText);
+
+    if (isFlex && !domTopFlex) {
+      domTopFlex = rankObj;
+    } else if (isSolo && !domTopSolo) {
+      domTopSolo = rankObj;
+    } else if (!domTopSolo) {
       domTopSolo = rankObj;
     } else if (!domTopFlex) {
       domTopFlex = rankObj;
@@ -170,7 +180,11 @@ export async function getOpggHistoricalRanks(riotId: string, bypassCache = false
   const cached = cache.get(key);
   if (!bypassCache && cached && cached.expiresAt > Date.now()) return cached.value;
   const response = await fetch(sourceUrl, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; HUH-Inhouse/1.0)', 'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8' },
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    },
     signal: AbortSignal.timeout(15_000),
   });
   if (response.status === 404) throw new HttpError(404, 'OPGG_NOT_FOUND', 'OP.GG 프로필을 찾을 수 없습니다.');
