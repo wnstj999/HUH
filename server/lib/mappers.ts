@@ -1,9 +1,25 @@
-import type { InhouseEvent, InhouseMatch, MatchParticipant, Player, Position } from '../../src/types.js';
+import type { HistoricalRankHistory, InhouseEvent, InhouseMatch, MatchParticipant, Player, Position } from '../../src/types.js';
 
 type Row = Record<string, unknown>;
 const text = (value: unknown) => typeof value === 'string' ? value : '';
 const nullableText = (value: unknown) => typeof value === 'string' ? value : null;
 const nullableNumber = (value: unknown) => typeof value === 'number' ? value : null;
+function rankHistory(value: unknown): HistoricalRankHistory {
+  const empty: HistoricalRankHistory = { solo: [], flex: [] };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return empty;
+  const source = value as Record<string, unknown>;
+  const list = (queue: 'solo' | 'flex') => Array.isArray(source[queue]) ? source[queue].flatMap((record) => {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return [];
+    const item = record as Record<string, unknown>;
+    const normalize = (rank: unknown) => {
+      if (!rank || typeof rank !== 'object' || Array.isArray(rank)) return null;
+      const entry = rank as Record<string, unknown>;
+      return typeof entry.tier === 'string' && typeof entry.season === 'string' ? { tier: entry.tier, division: typeof entry.division === 'string' ? entry.division : null, lp: typeof entry.lp === 'number' ? entry.lp : null, season: entry.season } : null;
+    };
+    return typeof item.season === 'string' ? [{ season: item.season, finalRank: normalize(item.finalRank), peakRank: normalize(item.peakRank) }] : [];
+  }) : [];
+  return { solo: list('solo'), flex: list('flex') };
+}
 
 export function mapPlayer(row: Row): Player {
   return {
@@ -11,7 +27,7 @@ export function mapPlayer(row: Row): Player {
     inhouseTier: text(row.inhouse_tier) as Player['inhouseTier'], inhouseScore: Number(row.inhouse_score), positions: (Array.isArray(row.positions) ? row.positions : []) as Position[],
     currentSoloTier: nullableText(row.current_solo_tier), currentSoloDivision: nullableText(row.current_solo_division), currentSoloLp: nullableNumber(row.current_solo_lp), currentSoloWins: nullableNumber(row.current_solo_wins), currentSoloLosses: nullableNumber(row.current_solo_losses), currentSoloWinRate: nullableNumber(row.current_solo_win_rate), riotLastUpdatedAt: nullableText(row.riot_last_updated_at),
     historicalSoloTier: nullableText(row.historical_solo_tier), historicalSoloDivision: nullableText(row.historical_solo_division), historicalSoloLp: nullableNumber(row.historical_solo_lp), historicalSoloSeason: nullableText(row.historical_solo_season),
-    historicalFlexTier: nullableText(row.historical_flex_tier), historicalFlexDivision: nullableText(row.historical_flex_division), historicalFlexLp: nullableNumber(row.historical_flex_lp), historicalFlexSeason: nullableText(row.historical_flex_season), historicalRankLastUpdatedAt: nullableText(row.historical_rank_last_updated_at),
+    historicalFlexTier: nullableText(row.historical_flex_tier), historicalFlexDivision: nullableText(row.historical_flex_division), historicalFlexLp: nullableNumber(row.historical_flex_lp), historicalFlexSeason: nullableText(row.historical_flex_season), historicalRankHistory: rankHistory(row.historical_rank_history), historicalRankLastUpdatedAt: nullableText(row.historical_rank_last_updated_at),
     participating: Boolean(row.participating), active: Boolean(row.active), note: text(row.note), createdAt: text(row.created_at), updatedAt: text(row.updated_at),
   };
 }

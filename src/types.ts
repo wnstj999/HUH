@@ -8,6 +8,10 @@ export type Position = 'TOP' | 'JUG' | 'MID' | 'ADC' | 'SUP';
 export type Team = 'BLUE' | 'RED';
 export type Language = 'ko' | 'en';
 
+export interface HistoricalRank { tier: string; division: string | null; lp: number | null; season: string }
+export interface SeasonRankRecord { season: string; finalRank: HistoricalRank | null; peakRank: HistoricalRank | null }
+export interface HistoricalRankHistory { solo: SeasonRankRecord[]; flex: SeasonRankRecord[] }
+
 export interface Player {
   id: string;
   displayName: string;
@@ -33,6 +37,7 @@ export interface Player {
   historicalFlexDivision: string | null;
   historicalFlexLp: number | null;
   historicalFlexSeason: string | null;
+  historicalRankHistory: HistoricalRankHistory;
   historicalRankLastUpdatedAt: string | null;
   participating: boolean;
   active: boolean;

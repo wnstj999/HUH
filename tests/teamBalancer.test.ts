@@ -9,6 +9,7 @@ function player(index: number, score: number, positions: Position[]): Player {
     currentSoloWins: null, currentSoloLosses: null, currentSoloWinRate: null, riotLastUpdatedAt: null,
     historicalSoloTier: null, historicalSoloDivision: null, historicalSoloLp: null, historicalSoloSeason: null,
     historicalFlexTier: null, historicalFlexDivision: null, historicalFlexLp: null, historicalFlexSeason: null,
+    historicalRankHistory: { solo: [], flex: [] },
     historicalRankLastUpdatedAt: null, participating: true, active: true, note: '', createdAt: '', updatedAt: '',
   };
 }

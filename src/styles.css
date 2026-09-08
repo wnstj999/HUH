@@ -126,6 +126,8 @@ td:first-child, th:first-child { padding-left: 5px; }
 .tier-LR,.tier-UR { background: #7052a8; }.tier-SR,.tier-S { background: #23796e; }.tier-A,.tier-B { background: #315f9c; }.tier-F,.tier-FF { background: #3b424e; }
 .tag-row, .row-actions { display: flex; gap: 5px; flex-wrap: wrap; }
 .position-tag { padding: 4px 6px; border-radius: 4px; background: #1d2838; color: #bec9d8; font: 600 .67rem 'IBM Plex Mono', monospace; }
+.rank-history-cell { display: grid; gap: 5px; min-width: 135px; }.rank-history-cell .text-button { width: fit-content; padding: 0; font-size: .7rem; }
+.season-rank-history { display: grid; }.season-rank-header, .season-rank-row { display: grid; grid-template-columns: 1fr 1.2fr; gap: 12px; align-items: center; padding: 11px 4px; border-top: 1px solid var(--line); font-size: .84rem; }.season-rank-header { border-top: 0; color: #a9b7ca; font-size: .72rem; font-weight: 700; }.season-rank-row b { color: var(--teal); }
 .row-actions button, .row-expand, .participant-line button { display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: var(--panel-3); }
 .row-actions button:hover { color: var(--teal); border-color: var(--teal); }
 .switch input { position: absolute; opacity: 0; }
