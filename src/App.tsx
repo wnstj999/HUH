@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type PropsWithChildren, type ReactNode } from 'react';
-import type { Session } from '@supabase/supabase-js';
 import { NavLink, Route, Routes, useNavigate } from 'react-router-dom';
-import { Activity, BarChart3, CalendarPlus, ChevronDown, CircleGauge, History, Languages, LogIn, LogOut, Pencil, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Activity, BarChart3, CalendarPlus, ChevronDown, CircleGauge, History, Languages, LogOut, Pencil, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useI18n, type MessageKey } from './i18n';
 import { api, API_BASE_URL } from './lib/api';
-import { authClient, authConfigured, signIn, signOut } from './lib/auth';
 import { formatDate, formatDuration, formatRank } from './lib/format';
 import { clearLegacyAccessKey, clearLegacyBrowserKeys, getLegacyRiotKey } from './lib/storage';
 import { buildBalancedTeams, REQUIRED_POSITIONS, swapAssignments } from './lib/teamBalancer';
@@ -37,7 +35,7 @@ function StatusDot({ ok, waiting = false }: { ok: boolean; waiting?: boolean }) 
   return <span className={`status-dot ${ok ? 'ok' : waiting ? 'waiting' : 'bad'}`} aria-hidden="true" />;
 }
 
-function Shell({ children, userEmail, onSignOut }: PropsWithChildren<{ userEmail: string; onSignOut: () => void }>) {
+function Shell({ children, userEmail, onSignOut }: PropsWithChildren<{ userEmail?: string; onSignOut?: () => void }>) {
   const { language, setLanguage, t } = useI18n();
   const nav: Array<[string, MessageKey, ReactNode]> = [
     ['/', 'dashboard', <CircleGauge />], ['/players', 'players', <Users />], ['/builder', 'builder', <CalendarPlus />],
@@ -54,7 +52,7 @@ function Shell({ children, userEmail, onSignOut }: PropsWithChildren<{ userEmail
     <div className="content-column">
       <header className="topbar">
         <div className="live-label"><span className="pulse" /> LIVE OPERATIONS</div>
-        <div className="topbar-actions"><span className="user-email">{userEmail}</span><button className="language-toggle" onClick={() => setLanguage(language === 'ko' ? 'en' : 'ko')} aria-label="Change language"><Languages size={16} /><strong className={language === 'ko' ? 'on' : ''}>KR</strong><span>|</span><strong className={language === 'en' ? 'on' : ''}>EN</strong></button><button className="language-toggle" onClick={onSignOut}><LogOut size={16} />{t('signOut')}</button></div>
+        <div className="topbar-actions">{userEmail && <span className="user-email">{userEmail}</span>}<button className="language-toggle" onClick={() => setLanguage(language === 'ko' ? 'en' : 'ko')} aria-label="Change language"><Languages size={16} /><strong className={language === 'ko' ? 'on' : ''}>KR</strong><span>|</span><strong className={language === 'en' ? 'on' : ''}>EN</strong></button>{onSignOut && <button className="language-toggle" onClick={onSignOut}><LogOut size={16} />{t('signOut')}</button>}</div>
       </header>
       <main className="main-content">{children}</main>
       <footer><span>{t('footer')}</span><NavLink to="/privacy">{t('privacy')}</NavLink><NavLink to="/terms">{t('terms')}</NavLink></footer>
@@ -252,42 +250,14 @@ function PolicyPage({ kind }: { kind: 'privacy' | 'terms' }) {
   return <article className="policy"><PageHeader title={t(kind === 'privacy' ? 'privacyTitle' : 'termsTitle')} kicker="HUH LEGAL" /><p className="policy-updated">{t('lastUpdated')}</p>{sections.map(([title, body]) => <section key={title}><h2>{title}</h2><p>{body}</p></section>)}</article>;
 }
 
-function LoginPage({ loading }: { loading: boolean }) {
-  const { language, setLanguage, t } = useI18n();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError('');
-    try { await signIn(email, password); }
-    catch { setError(t('loginFailed')); }
-    finally { setBusy(false); }
-  }
-
-  return <main className="login-page"><section className="login-card"><div className="login-brand"><span className="brand-mark">H</span><div><strong>HUH</strong><small>INHOUSE CONTROL</small></div></div><button className="language-toggle login-language" onClick={() => setLanguage(language === 'ko' ? 'en' : 'ko')}><Languages size={16} />{language === 'ko' ? 'EN' : 'KR'}</button><p className="kicker">PRIVATE OPERATIONS</p><h1>{t('loginTitle')}</h1><p className="helper">{t('loginDescription')}</p>{!authConfigured && <Alert message={t('authNotConfigured')} />}{error && <Alert message={error} />}<form className="login-form" onSubmit={submit}><Field label={t('email')}><input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></Field><Field label={t('password')}><input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></Field><button className="button primary full" disabled={loading || busy || !authConfigured}><LogIn size={16} />{loading ? t('loading') : t('signIn')}</button></form></section></main>;
-}
-
-function AuthenticatedApp({ session }: { session: Session }) {
+function AuthenticatedApp() {
   const appData = useAppData();
-  return <Shell userEmail={session.user.email ?? ''} onSignOut={() => { void signOut(); }}><Routes><Route path="/" element={<Dashboard {...appData} />} /><Route path="/players" element={<PlayersPage {...appData} />} /><Route path="/builder" element={<BuilderPage {...appData} />} /><Route path="/history" element={<HistoryPage {...appData} />} /><Route path="/stats" element={<StatsPage {...appData} />} /><Route path="/settings" element={<SettingsPage {...appData} />} /><Route path="/privacy" element={<PolicyPage kind="privacy" />} /><Route path="/terms" element={<PolicyPage kind="terms" />} /><Route path="*" element={<Dashboard {...appData} />} /></Routes></Shell>;
+  return <Shell userEmail="TEST MODE"><Routes><Route path="/" element={<Dashboard {...appData} />} /><Route path="/players" element={<PlayersPage {...appData} />} /><Route path="/builder" element={<BuilderPage {...appData} />} /><Route path="/history" element={<HistoryPage {...appData} />} /><Route path="/stats" element={<StatsPage {...appData} />} /><Route path="/settings" element={<SettingsPage {...appData} />} /><Route path="/privacy" element={<PolicyPage kind="privacy" />} /><Route path="/terms" element={<PolicyPage kind="terms" />} /><Route path="*" element={<Dashboard {...appData} />} /></Routes></Shell>;
 }
 
 export function App() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     clearLegacyAccessKey();
-    if (!authClient) { setLoading(false); return; }
-    void authClient.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
-    const { data: listener } = authClient.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession); setLoading(false);
-    });
-    return () => listener.subscription.unsubscribe();
   }, []);
-
-  if (!session) return <LoginPage loading={loading} />;
-  return <AuthenticatedApp session={session} />;
+  return <AuthenticatedApp />;
 }
