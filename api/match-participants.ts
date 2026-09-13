@@ -1,5 +1,5 @@
-import { assertDb, db } from '../../server/lib/db.js';
-import { bodyAsObject, handler, HttpError, requireMethod } from '../../server/lib/http.js';
+﻿import { assertDb, db } from '../server/lib/db.js';
+import { bodyAsObject, handler, HttpError, requireMethod } from '../server/lib/http.js';
 
 const FIELD_MAP = {
   championId: 'champion_id', championName: 'champion_name', kills: 'kills', deaths: 'deaths', assists: 'assists', cs: 'cs', gold: 'gold', damageToChampions: 'damage_to_champions', visionScore: 'vision_score',

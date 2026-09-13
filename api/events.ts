@@ -1,6 +1,6 @@
-import { assertDb, db } from '../../server/lib/db.js';
-import { bodyAsObject, handler, HttpError, requireMethod } from '../../server/lib/http.js';
-import { mapEvent } from '../../server/lib/mappers.js';
+﻿import { assertDb, db } from '../server/lib/db.js';
+import { bodyAsObject, handler, HttpError, requireMethod } from '../server/lib/http.js';
+import { mapEvent } from '../server/lib/mappers.js';
 
 export default handler(async (req, res) => {
   requireMethod(req, ['GET', 'POST']);
