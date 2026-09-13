@@ -111,7 +111,7 @@ export function CustomTeamManager({ players, ratings = {} }: Props) {
 
     try {
       setError('');
-      const members: Array<{ position: string; riotId: string; playerName?: string; playerId?: string; isCaptain?: boolean }> = [];
+      const members: Array<{ position: 'TOP' | 'JUG' | 'MID' | 'ADC' | 'SUP'; riotId: string; playerName?: string; playerId?: string; isCaptain?: boolean }> = [];
       for (const pos of POSITIONS) {
         const slot = memberSlots[pos];
         const rId = slot.riotId.trim();

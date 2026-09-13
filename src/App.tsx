@@ -7,6 +7,7 @@ import { formatDate, formatDuration, formatRank } from './lib/format';
 import { clearLegacyAccessKey, clearLegacyBrowserKeys, getLegacyRiotKey } from './lib/storage';
 import { buildBalancedTeams, REQUIRED_POSITIONS, swapAssignments } from './lib/teamBalancer';
 import { parseRiotId } from './lib/riotId';
+import { calculatePowerRating } from '../server/lib/powerRating.js';
 import {
   TIER_SCORES,
   type BalancedTeams,
@@ -61,11 +62,30 @@ function useAppData() {
       api.tournaments().catch(() => []),
     ]);
     const firstError = results.slice(0, 3).find((result) => result.status === 'rejected');
+    const loadedPlayers = results[0].status === 'fulfilled' ? results[0].value : [];
+    let loadedRatings = results[3].status === 'fulfilled' ? results[3].value : {};
+    if (Object.keys(loadedRatings).length === 0 && loadedPlayers.length > 0) {
+      const generatedRatings: Record<string, PowerRating> = {};
+      for (const p of loadedPlayers) {
+        const rating = calculatePowerRating({
+          inhouseTier: p.inhouseTier,
+          inhouseScore: p.inhouseScore,
+          currentSoloTier: p.currentSoloTier,
+          currentSoloDivision: p.currentSoloDivision,
+          currentSoloLp: p.currentSoloLp,
+          historicalSoloTier: p.historicalSoloTier,
+          historicalSoloSeason: p.historicalSoloSeason,
+          historicalFlexTier: p.historicalFlexTier,
+        }, []);
+        generatedRatings[p.id] = { ...rating, playerId: p.id, calculatedAt: new Date().toISOString() };
+      }
+      loadedRatings = generatedRatings;
+    }
     setData({
-      players: results[0].status === 'fulfilled' ? results[0].value : [],
+      players: loadedPlayers,
       matches: results[1].status === 'fulfilled' ? results[1].value : [],
       health: results[2].status === 'fulfilled' ? results[2].value : null,
-      ratings: results[3].status === 'fulfilled' ? results[3].value : {},
+      ratings: loadedRatings,
       teams: results[4].status === 'fulfilled' ? results[4].value : [],
       tournaments: results[5].status === 'fulfilled' ? results[5].value : [],
     });

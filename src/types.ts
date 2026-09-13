@@ -269,6 +269,7 @@ export interface Tournament {
   status: 'READY' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   winnerTeamId: string | null;
   winnerTeam?: Pick<CustomTeam, 'id' | 'name'> | null;
+  settings?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
   matches?: TournamentMatch[];

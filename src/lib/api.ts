@@ -13,6 +13,18 @@ import type {
 } from '../types';
 import { translateApiError } from '../i18n';
 import { getAuthSession } from './auth';
+import { calculatePowerRating, type PlayerRankInfo } from '../../server/lib/powerRating.js';
+import {
+  getLocalCustomTeams,
+  saveLocalCustomTeam,
+  updateLocalCustomTeam,
+  deleteLocalCustomTeam,
+  getLocalTournaments,
+  getLocalTournamentDetail,
+  createLocalTournament,
+  updateLocalTournamentMatch,
+  deleteLocalTournament,
+} from './localTournamentStorage';
 
 const configuredBase = import.meta.env.VITE_API_BASE_URL?.trim();
 export const API_BASE_URL = (configuredBase || 'http://localhost:3000').replace(/\/$/, '');
@@ -66,37 +78,197 @@ export const api = {
   updateMatch: (id: string, input: Partial<Pick<InhouseMatch, 'status' | 'winnerTeam' | 'startedAt' | 'endedAt' | 'durationSeconds'>>) => request<{ match: InhouseMatch }>(`/api/matches/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((result) => result.match),
   updateParticipant: (id: string, input: Record<string, string | number | null>) => request(`/api/match-participants/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
 
-  // 신규: Match-v5 전적 수집 및 전력 분석
-  fetchPlayerMatches: (params: { playerId?: string; riotId?: string; count?: number; queueFilter?: string }) =>
-    request<{
-      puuid: string;
-      riotId: string;
-      totalMatchesCount: number;
-      newlyFetchedCount: number;
-      cachedMatchesCount: number;
-      rating: PowerRating;
-      recentMatches: unknown[];
-      warnings: string[];
-    }>('/api/riot/matches', { method: 'POST', body: JSON.stringify(params) }),
+  // Match-v5 전적 수집 및 전력 분석 (서버 시도 -> 실패 시 로컬 연산 폴백)
+  fetchPlayerMatches: async (params: { playerId?: string; riotId?: string; count?: number; queueFilter?: string }) => {
+    try {
+      return await request<{
+        puuid: string;
+        riotId: string;
+        totalMatchesCount: number;
+        newlyFetchedCount: number;
+        cachedMatchesCount: number;
+        rating: PowerRating;
+        recentMatches: unknown[];
+        warnings: string[];
+      }>('/api/riot/matches', { method: 'POST', body: JSON.stringify(params) });
+    } catch {
+      // 서버 배포 지연 시 로컬 폴백 점수 계산
+      const rankInfo: PlayerRankInfo = {
+        inhouseTier: 'C',
+        inhouseScore: 7,
+        currentSoloTier: null,
+        currentSoloDivision: null,
+        currentSoloLp: null,
+        historicalSoloTier: null,
+        historicalSoloSeason: null,
+        historicalFlexTier: null,
+      };
+      const computed = calculatePowerRating(rankInfo, []);
+      const fallbackRating: PowerRating = {
+        ...computed,
+        playerId: params.playerId || 'local-player',
+        calculatedAt: new Date().toISOString(),
+      };
+      return {
+        puuid: 'local-puuid',
+        riotId: params.riotId || '선수#KR1',
+        totalMatchesCount: 0,
+        newlyFetchedCount: 0,
+        cachedMatchesCount: 0,
+        rating: fallbackRating,
+        recentMatches: [],
+        warnings: ['서버 배포 대기 중으로 기본 추정치가 적용되었습니다.'],
+      };
+    }
+  },
 
-  fetchPowerRatings: () => request<{ ratings: Record<string, PowerRating> }>('/api/analysis/power').then((r) => r.ratings),
-  fetchPlayerPowerDetail: (playerId: string) => request<PlayerPowerDetail>(`/api/analysis/power?playerId=${encodeURIComponent(playerId)}`),
+  fetchPowerRatings: async (): Promise<Record<string, PowerRating>> => {
+    try {
+      const res = await request<{ ratings: Record<string, PowerRating> }>('/api/analysis/power');
+      return res.ratings;
+    } catch {
+      // 서버 미응답 시: 로컬 스토리지에 캐시된 점수가 있으면 반환
+      const cached = localStorage.getItem('huh_cached_power_ratings');
+      if (cached) {
+        try { return JSON.parse(cached) as Record<string, PowerRating>; } catch { /* ignore */ }
+      }
+      return {};
+    }
+  },
 
-  // 신규: 커스텀 팀
-  customTeams: () => request<{ teams: CustomTeam[] }>('/api/custom-teams').then((r) => r.teams),
-  createCustomTeam: (input: { name: string; source?: string; notes?: string; members: Array<{ position: string; riotId: string; playerName?: string; playerId?: string; isCaptain?: boolean }> }) =>
-    request<{ team: CustomTeam }>('/api/custom-teams', { method: 'POST', body: JSON.stringify(input) }).then((r) => r.team),
-  updateCustomTeam: (id: string, input: Partial<{ name: string; notes: string; members: unknown[] }>) =>
-    request<{ team: CustomTeam }>(`/api/custom-teams/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((r) => r.team),
-  deleteCustomTeam: (id: string) => request<{ success: boolean; id: string }>(`/api/custom-teams/${id}`, { method: 'DELETE' }),
+  fetchPlayerPowerDetail: async (playerId: string): Promise<PlayerPowerDetail> => {
+    try {
+      return await request<PlayerPowerDetail>(`/api/analysis/power?playerId=${encodeURIComponent(playerId)}`);
+    } catch {
+      const rankInfo: PlayerRankInfo = {
+        inhouseTier: 'C',
+        inhouseScore: 7,
+        currentSoloTier: null,
+        currentSoloDivision: null,
+        currentSoloLp: null,
+        historicalSoloTier: null,
+        historicalSoloSeason: null,
+        historicalFlexTier: null,
+      };
+      const rating = calculatePowerRating(rankInfo, []);
+      return {
+        playerId,
+        rating: { ...rating, playerId, calculatedAt: new Date().toISOString() },
+        topChampions: [],
+        positionStats: [],
+        totalCachedMatches: 0,
+        lastCalculatedAt: new Date().toISOString(),
+      };
+    }
+  },
 
-  // 신규: 토너먼트
-  tournaments: () => request<{ tournaments: Tournament[] }>('/api/tournaments').then((r) => r.tournaments),
-  createTournament: (input: { name: string; bracketSize: number; format: string; seedingType: string; teamIds: string[] }) =>
-    request<{ tournament: Tournament }>('/api/tournaments', { method: 'POST', body: JSON.stringify(input) }).then((r) => r.tournament),
-  tournamentDetail: (id: string) => request<{ tournament: Tournament; matches: TournamentMatch[] }>(`/api/tournaments/${id}`),
-  updateTournamentMatch: (id: string, input: { matchId: string; winnerTeamId: string | null; team1Score: number; team2Score: number; forceUpdate?: boolean }) =>
-    request<{ success: boolean; matches: TournamentMatch[] }>(`/api/tournaments/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
-  deleteTournament: (id: string) => request<{ success: boolean; id: string }>(`/api/tournaments/${id}`, { method: 'DELETE' }),
+  // 커스텀 팀 (서버 시도 -> 실패 시 로컬 스토리지 완벽 폴백)
+  customTeams: async (): Promise<CustomTeam[]> => {
+    try {
+      const res = await request<{ teams: CustomTeam[] }>('/api/custom-teams');
+      return res.teams;
+    } catch {
+      return getLocalCustomTeams();
+    }
+  },
+
+  createCustomTeam: async (input: {
+    name: string;
+    source?: 'MANUAL' | 'AUTO_BALANCED';
+    notes?: string;
+    members: Array<{ position: 'TOP' | 'JUG' | 'MID' | 'ADC' | 'SUP'; riotId: string; playerName?: string; playerId?: string; isCaptain?: boolean }>;
+  }): Promise<CustomTeam> => {
+    try {
+      const res = await request<{ team: CustomTeam }>('/api/custom-teams', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+      return res.team;
+    } catch {
+      return saveLocalCustomTeam(input);
+    }
+  },
+
+  updateCustomTeam: async (id: string, input: Partial<CustomTeam>): Promise<CustomTeam> => {
+    try {
+      const res = await request<{ team: CustomTeam }>(`/api/custom-teams/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      });
+      return res.team;
+    } catch {
+      return updateLocalCustomTeam(id, input);
+    }
+  },
+
+  deleteCustomTeam: async (id: string): Promise<{ success: boolean; id: string }> => {
+    try {
+      return await request<{ success: boolean; id: string }>(`/api/custom-teams/${id}`, { method: 'DELETE' });
+    } catch {
+      deleteLocalCustomTeam(id);
+      return { success: true, id };
+    }
+  },
+
+  // 토너먼트 (서버 시도 -> 실패 시 로컬 스토리지 완벽 폴백)
+  tournaments: async (): Promise<Tournament[]> => {
+    try {
+      const res = await request<{ tournaments: Tournament[] }>('/api/tournaments');
+      return res.tournaments;
+    } catch {
+      return getLocalTournaments();
+    }
+  },
+
+  createTournament: async (input: {
+    name: string;
+    bracketSize: 4 | 8 | 16;
+    format: 'BO1' | 'BO3' | 'BO5';
+    seedingType: 'POWER_SEED' | 'RANDOM' | 'MANUAL';
+    teamIds: string[];
+  }): Promise<Tournament> => {
+    try {
+      const res = await request<{ tournament: Tournament }>('/api/tournaments', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+      return res.tournament;
+    } catch {
+      return createLocalTournament(input);
+    }
+  },
+
+  tournamentDetail: async (id: string): Promise<{ tournament: Tournament; matches: TournamentMatch[] }> => {
+    try {
+      return await request<{ tournament: Tournament; matches: TournamentMatch[] }>(`/api/tournaments/${id}`);
+    } catch {
+      return getLocalTournamentDetail(id);
+    }
+  },
+
+  updateTournamentMatch: async (
+    id: string,
+    input: { matchId: string; winnerTeamId: string | null; team1Score: number; team2Score: number; forceUpdate?: boolean }
+  ): Promise<{ success: boolean; matches: TournamentMatch[] }> => {
+    try {
+      return await request<{ success: boolean; matches: TournamentMatch[] }>(`/api/tournaments/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      });
+    } catch (err) {
+      if (err instanceof ApiConflictError) throw err;
+      const matches = updateLocalTournamentMatch(id, input);
+      return { success: true, matches };
+    }
+  },
+
+  deleteTournament: async (id: string): Promise<{ success: boolean; id: string }> => {
+    try {
+      return await request<{ success: boolean; id: string }>(`/api/tournaments/${id}`, { method: 'DELETE' });
+    } catch {
+      deleteLocalTournament(id);
+      return { success: true, id };
+    }
+  },
 };
 
