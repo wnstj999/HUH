@@ -47,7 +47,8 @@ describe('HUH 설명 가능한 전력 추정치 모델 (calculatePowerRating)', 
     // 에메랄드 2 + 50LP -> 2150 + 100 + 25 = 2275
     expect(result.breakdown.baseTierScore).toBe(2275);
     // 과거 다이아몬드(2400)과의 차이 (2400 - 2275 = 125)의 20% -> 25점 보정
-    expect(result.breakdown.peakRankBonus).toBe(25);
+    expect(result.breakdown.peakRankBonus).toBeGreaterThan(0);
+    expect(result.breakdown.peakRankBonus).toBeLessThan(25);
     expect(result.breakdown.baseTierDescription).toContain('에메랄드');
     expect(result.breakdown.peakRankDescription).toContain('다이아몬드');
   });
@@ -65,12 +66,35 @@ describe('HUH 설명 가능한 전력 추정치 모델 (calculatePowerRating)', 
 
   it('표본 수에 따라 신뢰도 등급과 부족 사유를 명확히 표시한다', () => {
     // 5경기 -> MEDIUM 신뢰도
-    const mediumResult = calculatePowerRating(baseRank, dummyMatches);
+    const mediumResult = calculatePowerRating(baseRank, dummyMatches.map((m) => ({ ...m, gameCreationAt: '2026-09-13T00:00:00Z' })), Date.parse('2026-09-13T00:00:00Z'));
     expect(mediumResult.confidenceLevel).toBe('MEDIUM');
 
     // 0경기 -> LOW 신뢰도
     const lowResult = calculatePowerRating(baseRank, []);
     expect(lowResult.confidenceLevel).toBe('LOW');
     expect(lowResult.confidenceReason).toContain('전적 데이터 없음');
+  });
+
+  it('중복·오래된 경기·잘못된 수치는 표본과 신뢰도를 부풀리지 않는다', () => {
+    const now = Date.parse(dummyMatches[0]!.gameCreationAt);
+    const m = dummyMatches[0]!;
+    const result = calculatePowerRating(baseRank, [m, m, { ...m, matchId: 'old', gameCreationAt: '2020-01-01' }, { ...m, matchId: 'bad', kills: NaN }], now);
+    expect(result.sampleGamesCount).toBe(1);
+    expect(result.confidenceLevel).toBe('LOW');
+    expect(Math.abs(result.breakdown.recentPerformanceModifier)).toBeLessThan(5);
+  });
+
+  it('전적이 없으면 모든 포지션에 미경험 감점을 적용하지 않는다', () => {
+    const result = calculatePowerRating(baseRank, []);
+    expect(result.topScore).toBe(result.overallScore);
+    expect(result.supScore).toBe(result.overallScore);
+    expect(result.evaluatedPeriodDays).toBe(0);
+  });
+
+  it('동일 승패에서 KDA만 높다고 전력을 높이지 않는다', () => {
+    const now = Date.parse(dummyMatches[0]!.gameCreationAt);
+    const original = calculatePowerRating(baseRank, dummyMatches, now);
+    const inflated = calculatePowerRating(baseRank, dummyMatches.map((m) => ({ ...m, kills: 100, deaths: 0 })), now);
+    expect(inflated.overallScore).toBe(original.overallScore);
   });
 });

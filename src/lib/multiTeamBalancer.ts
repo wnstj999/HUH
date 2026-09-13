@@ -1,4 +1,5 @@
 import type { MultiTeamPlan, MultiTeamAssignment, Player, Position, PowerRating, TeamConstraints } from '../types';
+import { calculatePowerRating } from '../../server/lib/powerRating';
 
 export const POSITIONS: Position[] = ['TOP', 'JUG', 'MID', 'ADC', 'SUP'];
 
@@ -20,16 +21,16 @@ export function getPlayerPositionScore(
     const scoreVal = Number(rating[posKey] ?? rating.overallScore ?? 1500);
     const posGamesKey = `${position.toLowerCase()}Games` as keyof PowerRating;
     const games = Number(rating[posGamesKey] ?? 0);
-    const isMain = games >= 5 || player.positions.includes(position);
+    const isMain = games >= 5;
     return {
       score: scoreVal,
       isMain,
-      confidence: rating.confidenceLevel,
+      confidence: games < 5 ? 'LOW' : rating.confidenceLevel,
     };
   }
 
   // 레이팅이 없을 때 fallback: player.inhouseScore (4~15)
-  const base = 1000 + ((player.inhouseScore || 7) - 4) * 100;
+  const base = calculatePowerRating(player, []).overallScore;
   const isPref = player.positions.includes(position);
   return {
     score: isPref ? base : Math.round(base * 0.88),
@@ -45,10 +46,23 @@ function validateConstraints(
   constraints: TeamConstraints,
 ): void {
   const playerMap = new Map(players.map((p) => [p.id, p]));
+  if (playerMap.size !== players.length) throw new MultiTeamBuildError('DUPLICATE_PLAYER', '같은 플레이어를 중복 배정할 수 없습니다.');
+  const ids = [...Object.keys(constraints.pinnedTeams), ...Object.keys(constraints.pinnedPositions), ...constraints.pairedPlayers.flat(), ...constraints.isolatedPlayers.flat()];
+  if (ids.some((id) => !playerMap.has(id))) throw new MultiTeamBuildError('UNKNOWN_PLAYER', '선택하지 않은 플레이어의 고정 조건을 제거해 주세요.');
+  const slots = new Set<string>();
+  for (const [id, pos] of Object.entries(constraints.pinnedPositions)) {
+    if (!POSITIONS.includes(pos)) throw new MultiTeamBuildError('INVALID_POSITION', '올바르지 않은 포지션입니다.');
+    const team = constraints.pinnedTeams[id];
+    if (team !== undefined) {
+      const slot = `${team}:${pos}`;
+      if (slots.has(slot)) throw new MultiTeamBuildError('DUPLICATE_SLOT', '같은 팀의 같은 포지션에 두 명이 고정되어 있습니다.');
+      slots.add(slot);
+    }
+  }
 
   // 1. 고정 팀 인덱스 유효성
   for (const teamIdx of Object.values(constraints.pinnedTeams)) {
-    if (teamIdx < 0 || teamIdx >= numTeams) {
+    if (!Number.isInteger(teamIdx) || teamIdx < 0 || teamIdx >= numTeams) {
       throw new MultiTeamBuildError(
         'INVALID_PINNED_TEAM',
         `플레이어 고정 팀 번호가 유효 범위를 벗어났습니다. (0~${numTeams - 1})`,
@@ -183,6 +197,7 @@ function buildPlanResult(
   description: string,
   assignmentList: MultiTeamAssignment[],
   numTeams: number,
+  ratings?: Record<string, PowerRating>,
 ): MultiTeamPlan {
   const teams = [];
   const teamNames = ['BLUE', 'RED', 'GREEN', 'YELLOW', 'PURPLE', 'ORANGE', 'WHITE', 'BLACK',
@@ -201,8 +216,8 @@ function buildPlanResult(
     const offRoleCount = tAssignments.filter((a) => !a.isMainPosition).length;
     totalOffRoleCount += offRoleCount;
 
-    const confidences = tAssignments.map((a) => (a.ratingScore > 0 ? 'MEDIUM' : 'LOW'));
-    const confidence: 'HIGH' | 'MEDIUM' | 'LOW' = confidences.filter((c) => c === 'LOW').length >= 2 ? 'LOW' : 'HIGH';
+    const confidences = tAssignments.map((a) => getPlayerPositionScore(a.player, a.position, ratings).confidence);
+    const confidence: 'HIGH' | 'MEDIUM' | 'LOW' = confidences.includes('LOW') ? 'LOW' : confidences.every((c) => c === 'HIGH') ? 'HIGH' : 'MEDIUM';
 
     teams.push({
       teamIndex: i,
@@ -256,80 +271,53 @@ export function buildMultiTeams(
   // 초기 유효 배정 생성 시도
   // 각 포지션별 필요한 인원: numTeams명씩
   // 우선 포지션 선호도/숙련도를 고려하여 슬롯 생성
-  function createInitialAssignment(): MultiTeamAssignment[] | null {
-    // 셔플된 플레이어 복사본
-    const shuffled = [...players].sort(() => Math.random() - 0.5);
-    const result: MultiTeamAssignment[] = [];
-    const used = new Set<string>();
-
-    // 1. 고정 포지션 & 고정 팀 먼저 배치
-    for (const p of shuffled) {
-      const fixedPos = constraints.pinnedPositions[p.id];
-      const fixedTeam = constraints.pinnedTeams[p.id];
-      if (fixedPos && fixedTeam !== undefined) {
-        const pStat = getPlayerPositionScore(p, fixedPos, ratings);
-        result.push({
-          teamIndex: fixedTeam,
-          teamName: `Team ${fixedTeam + 1}`,
-          position: fixedPos,
-          player: p,
-          ratingScore: pStat.score,
-          isMainPosition: pStat.isMain,
-        });
-        used.add(p.id);
+  // Most-constrained-first search enforces pairs and pins during construction.
+  // A bounded search failure is not proof that constraints are impossible.
+  const slots = Array.from({ length: numTeams }, (_, teamIndex) =>
+    POSITIONS.map((position) => ({ teamIndex, position }))).flat();
+  let nodes = 0;
+  const result: MultiTeamAssignment[] = [];
+  const used = new Set<string>();
+  function candidates(slot: { teamIndex: number; position: Position }) {
+    return players.filter((p) => {
+      if (used.has(p.id)) return false;
+      if (constraints.pinnedTeams[p.id] !== undefined && constraints.pinnedTeams[p.id] !== slot.teamIndex) return false;
+      if (constraints.pinnedPositions[p.id] && constraints.pinnedPositions[p.id] !== slot.position) return false;
+      for (const [a, b] of constraints.pairedPlayers) {
+        const other = a === p.id ? b : b === p.id ? a : null;
+        if (!other) continue;
+        const team = result.find((r) => r.player.id === other)?.teamIndex ?? constraints.pinnedTeams[other];
+        if (team !== undefined && team !== slot.teamIndex) return false;
       }
-    }
-
-    // 2. 나머지 슬롯 채우기 (각 팀 5개 포지션)
-    for (let t = 0; t < numTeams; t += 1) {
-      for (const pos of POSITIONS) {
-        // 이미 해당 팀/포지션 슬롯이 채워졌는지 확인
-        if (result.some((a) => a.teamIndex === t && a.position === pos)) continue;
-
-        // 가능한 후보 찾기
-        const candidate = shuffled.find((p) => {
-          if (used.has(p.id)) return false;
-          const pinnedPos = constraints.pinnedPositions[p.id];
-          if (pinnedPos && pinnedPos !== pos) return false;
-          const pinnedTeam = constraints.pinnedTeams[p.id];
-          if (pinnedTeam !== undefined && pinnedTeam !== t) return false;
-          return true;
-        });
-
-        if (!candidate) return null; // 슬롯 채우기 실패
-        used.add(candidate.id);
-
-        const pStat = getPlayerPositionScore(candidate, pos, ratings);
-        result.push({
-          teamIndex: t,
-          teamName: `Team ${t + 1}`,
-          position: pos,
-          player: candidate,
-          ratingScore: pStat.score,
-          isMainPosition: pStat.isMain,
-        });
+      for (const [a, b] of constraints.isolatedPlayers) {
+        const other = a === p.id ? b : b === p.id ? a : null;
+        if (other === p.id) return false;
+        if (other && result.some((r) => r.player.id === other && r.teamIndex === slot.teamIndex)) return false;
       }
+      return true;
+    }).sort((a, b) => Number(getPlayerPositionScore(b, slot.position, ratings).isMain) - Number(getPlayerPositionScore(a, slot.position, ratings).isMain) || a.id.localeCompare(b.id));
+  }
+  function visit(remaining: typeof slots): boolean {
+    if (++nodes > 50000) return false;
+    if (!remaining.length) return satisfiesConstraints(result, constraints);
+    const choices = remaining.map((slot) => ({ slot, players: candidates(slot) })).sort((a, b) => a.players.length - b.players.length);
+    const choice = choices[0]!;
+    for (const player of choice.players) {
+      const stat = getPlayerPositionScore(player, choice.slot.position, ratings);
+      result.push({ ...choice.slot, teamName: `Team ${choice.slot.teamIndex + 1}`, player, ratingScore: stat.score, isMainPosition: stat.isMain });
+      used.add(player.id);
+      if (visit(remaining.filter((slot) => slot !== choice.slot))) return true;
+      used.delete(player.id);
+      result.pop();
+      if (nodes > 50000) return false;
     }
-
-    return satisfiesConstraints(result, constraints) ? result : null;
+    return false;
   }
-
-  // 초기 상태 찾기 (최대 150회 재시도)
-  let baseAssignment: MultiTeamAssignment[] | null = null;
-  for (let attempt = 0; attempt < 150; attempt += 1) {
-    const init = createInitialAssignment();
-    if (init) {
-      baseAssignment = init;
-      break;
-    }
-  }
-
-  if (!baseAssignment) {
-    throw new MultiTeamBuildError(
-      'UNSATISFIABLE_CONSTRAINTS',
-      '설정된 고정 조건 및 페어링 조건을 모두 만족하면서 팀을 구성할 수 없습니다. 제약 조건을 완화해 주세요.',
-    );
-  }
+  if (!visit(slots)) throw new MultiTeamBuildError(
+    nodes > 50000 ? 'SEARCH_LIMIT' : 'UNSATISFIABLE_CONSTRAINTS',
+    nodes > 50000 ? '탐색 한도 내에서 배정을 찾지 못했습니다. 일부 고정 조건을 조정해 주세요.' : '설정한 조건으로 팀별 5개 포지션을 구성할 수 없습니다.',
+  );
+  const baseAssignment = result;
 
   // 3가지 모드별 최적화 실행 (Simulated Annealing / Local Search)
   const modes: Array<{
@@ -430,7 +418,7 @@ export function buildMultiTeams(
       temp *= coolingRate;
     }
 
-    plans.push(buildPlanResult(name, description, best, numTeams));
+    plans.push(buildPlanResult(name, description, best, numTeams, ratings));
   }
 
   return { plans };
@@ -442,6 +430,7 @@ export function swapMultiTeamPlayers(
   firstPlayerId: string,
   secondPlayerId: string,
   ratings?: Record<string, PowerRating>,
+  constraints: TeamConstraints = { pinnedPositions: {}, pinnedTeams: {}, pairedPlayers: [], isolatedPlayers: [] },
 ): MultiTeamPlan {
   const allAssignments = plan.teams.flatMap((t) => t.assignments);
   const a1 = allAssignments.find((a) => a.player.id === firstPlayerId);
@@ -472,5 +461,6 @@ export function swapMultiTeamPlayers(
     return a;
   });
 
-  return buildPlanResult(plan.name, plan.description, updatedAssignments, plan.teams.length);
+  if (!satisfiesConstraints(updatedAssignments, constraints)) throw new MultiTeamBuildError('CONSTRAINT_VIOLATION', '이 교환은 팀·포지션 고정 또는 같은 팀 조건을 위반합니다.');
+  return buildPlanResult(plan.name, plan.description, updatedAssignments, plan.teams.length, ratings);
 }

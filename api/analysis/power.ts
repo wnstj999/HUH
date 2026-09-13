@@ -1,6 +1,11 @@
 import { db } from '../../server/lib/db.js';
 import { handler, requireMethod } from '../../server/lib/http.js';
 
+// DB columns use snake_case; the frontend rating contract uses camelCase.
+function mapRating(row: Record<string, unknown> | null) {
+  return row ? Object.fromEntries(Object.entries(row).map(([key, value]) => [key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()), value])) : null;
+}
+
 export default handler(async (req, res) => {
   requireMethod(req, ['GET']);
   const client = db();
@@ -79,7 +84,7 @@ export default handler(async (req, res) => {
 
     res.status(200).json({
       playerId,
-      rating: ratingRow,
+      rating: mapRating(ratingRow),
       topChampions,
       positionStats,
       totalCachedMatches: matchStats.length,
@@ -89,10 +94,11 @@ export default handler(async (req, res) => {
   }
 
   // 2. 전체 플레이어 전력 점수 맵 조회
-  const { data: allRatings } = await client.from('player_power_ratings').select('*');
+  const { data: allRatings, error } = await client.from('player_power_ratings').select('*');
+  if (error) throw error;
   const ratingMap: Record<string, unknown> = {};
   for (const r of allRatings || []) {
-    ratingMap[r.player_id] = r;
+    ratingMap[r.player_id] = mapRating(r);
   }
 
   res.status(200).json({ ratings: ratingMap });

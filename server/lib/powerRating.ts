@@ -127,8 +127,9 @@ export function normalizePosition(riotPos: string): 'TOP' | 'JUG' | 'MID' | 'ADC
 export function calculatePowerRating(
   rankInfo: PlayerRankInfo,
   matches: PlayerMatchRecord[],
+  now: number = Date.now(),
 ): EvaluatedPowerRating {
-  const modelVersion = 'huh-v1.0';
+  const modelVersion = 'huh-v1.1';
 
   // 1. 기본 티어 점수 산출
   let baseScore = 1500;
@@ -136,8 +137,9 @@ export function calculatePowerRating(
 
   const soloTier = rankInfo.currentSoloTier?.toUpperCase();
   if (soloTier && TIER_BASE_POINTS[soloTier]) {
-    const div = rankInfo.currentSoloDivision ? DIVISION_POINTS[rankInfo.currentSoloDivision] ?? 50 : 50;
-    const lp = rankInfo.currentSoloLp ? Math.min(Math.max(rankInfo.currentSoloLp, 0), 100) : 0;
+    const apex = ['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(soloTier);
+    const div = apex ? 0 : rankInfo.currentSoloDivision ? DIVISION_POINTS[rankInfo.currentSoloDivision] ?? 0 : 0;
+    const lp = Number.isFinite(rankInfo.currentSoloLp) ? Math.min(Math.max(rankInfo.currentSoloLp ?? 0, 0), apex ? 3000 : 100) : 0;
     baseScore = TIER_BASE_POINTS[soloTier] + div + Math.round(lp * 0.5);
     const krName = TIER_KR_NAMES[soloTier] || soloTier;
     baseDesc = `현재 솔로랭크 ${krName}(${soloTier}) ${rankInfo.currentSoloDivision ?? ''} (${baseScore}점)`;
@@ -161,14 +163,29 @@ export function calculatePowerRating(
     const historicalPoints = TIER_BASE_POINTS[historicalTier] ?? 0;
     if (historicalPoints > baseScore) {
       // 과거 기록이 현재보다 높을 때, 과거 영향력은 차이의 20%로 제한 (최대 120점)
-      peakBonus = Math.min(Math.round((historicalPoints - baseScore) * 0.2), 120);
+      const season = rankInfo.historicalSoloSeason ?? '';
+      const yearMatch = season.match(/20\d{2}/);
+      const seasonMatch = season.match(/^S(\d{1,2})(?:\D|$)/i);
+      const year = yearMatch ? Number(yearMatch[0]) : seasonMatch ? 2009 + Number(seasonMatch[1]) : null;
+      const decay = year === null ? 0.25 : Math.pow(0.5, Math.max(0, new Date(now).getUTCFullYear() - year) / 2);
+      peakBonus = Math.min(Math.round((historicalPoints - baseScore) * 0.2 * decay), 120);
       const krName = TIER_KR_NAMES[historicalTier] || historicalTier;
       peakDesc = `과거 최고 솔로랭크 ${krName}(${historicalTier}) 달성 이력 감쇄 반영 (+${peakBonus}점)`;
     }
   }
 
   // 3. 최근 경기 지표 분석 (최근 100경기 이내 유효 데이터)
-  const validMatches = matches.filter((m) => m.gameDuration >= 480); // 8분 이상 정상 경기만
+  const seen = new Set<string>();
+  const validMatches = matches.filter((m) => {
+    const date = Date.parse(m.gameCreationAt);
+    if (!m.matchId || seen.has(m.matchId) || !Number.isFinite(date) || date > now || now - date > 180 * 86400000) return false;
+    if (![420, 440].includes(m.queueId) || !Number.isFinite(m.gameDuration) || m.gameDuration < 480) return false;
+    if (![m.kills, m.deaths, m.assists, m.cs, m.goldEarned, m.damageToChampions, m.visionScore].every((value) => Number.isFinite(value) && value >= 0)) return false;
+    seen.add(m.matchId);
+    return true;
+  }).sort((a, b) => Date.parse(b.gameCreationAt) - Date.parse(a.gameCreationAt)).slice(0, 100);
+  const weight = (m: PlayerMatchRecord) => Math.pow(0.5, (now - Date.parse(m.gameCreationAt)) / (30 * 86400000));
+  const effectiveGames = validMatches.reduce((sum, m) => sum + weight(m), 0);
   const sampleCount = validMatches.length;
 
   let winRate = 0;
@@ -196,14 +213,16 @@ export function calculatePowerRating(
     avgVisionScore = Number((validMatches.reduce((acc, m) => acc + m.visionScore, 0) / sampleCount).toFixed(1));
 
     // 최근 승률 보정 (-40 ~ +40)
-    const winRateMod = Math.round((winRate - 50) * 0.8);
+    const weightedWins = validMatches.reduce((sum, m) => sum + (m.win ? weight(m) : 0), 0);
+    const winRateMod = ((weightedWins + 10) / (effectiveGames + 20) - 0.5) * 80;
     // KDA 보정 (기준 2.5, -30 ~ +30)
-    const kdaMod = Math.min(Math.max(Math.round((avgKda - 2.5) * 15), -30), 30);
+    // KDA is descriptive only: champion and role differences make a universal bonus misleading.
+    const kdaMod = 0;
 
     // 표본 수 가중치 (표본이 적으면 보정치 축소)
-    const sampleWeight = Math.min(sampleCount / 20, 1.0);
+    const sampleWeight = 1;
     recentPerfMod = Math.round((winRateMod + kdaMod) * sampleWeight);
-    recentPerfDesc = `최근 ${sampleCount}전 승률 ${winRate}%, KDA ${avgKda} 반영 (${recentPerfMod >= 0 ? '+' : ''}${recentPerfMod}점)`;
+    recentPerfDesc = `유효 ${sampleCount}전: 최근성 30일 반감기와 중립 20경기 사전값 적용 (${recentPerfMod >= 0 ? '+' : ''}${recentPerfMod}점). KDA·딜량은 참고 지표이며 점수에 직접 합산하지 않습니다.`;
   }
 
   const overallScore = Math.round(baseScore + peakBonus + recentPerfMod);
@@ -237,8 +256,8 @@ export function calculatePowerRating(
 
     if (count === 0) {
       level = 'UNPLAYED';
-      multiplier = 0.85;
-    } else if (ratio >= 0.45 || count >= 10) {
+      multiplier = sampleCount === 0 ? 1 : 1 - 0.1 * effectiveGames / (effectiveGames + 20);
+    } else if ((ratio >= 0.45 && count >= 5) || count >= 20) {
       level = 'MAIN';
       multiplier = 1.0;
     } else if (ratio >= 0.2 || count >= 5) {
@@ -250,7 +269,9 @@ export function calculatePowerRating(
     }
 
     // 포지션별 승률 추가 가감 (판수가 3회 이상일 때)
-    const winBonus = count >= 3 ? Math.round((pWin - 50) * 0.4) : 0;
+    const roleWeight = posMatches.reduce((sum, m) => sum + weight(m), 0);
+    const roleWins = posMatches.reduce((sum, m) => sum + (m.win ? weight(m) : 0), 0);
+    const winBonus = Math.round(((roleWins + 10) / (roleWeight + 20) - 0.5) * 40);
     const pScore = Math.round(overallScore * multiplier + winBonus);
 
     roleMastery[pos] = {
@@ -266,10 +287,10 @@ export function calculatePowerRating(
   let confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
   const reasons: string[] = [];
 
-  if (sampleCount >= 20 && soloTier) {
+  if (effectiveGames >= 40 && soloTier && TIER_BASE_POINTS[soloTier]) {
     confidenceLevel = 'HIGH';
     reasons.push(`최근 ${sampleCount}전 및 솔로랭크 티어 확보`);
-  } else if (sampleCount >= 5) {
+  } else if (effectiveGames >= 5) {
     confidenceLevel = 'MEDIUM';
     if (!soloTier) reasons.push('현재 솔로랭크 정보 없음');
     reasons.push(`최근 경기 수 ${sampleCount}건`);
@@ -307,7 +328,7 @@ export function calculatePowerRating(
     confidenceLevel,
     confidenceReason: reasons.join(', '),
     sampleGamesCount: sampleCount,
-    evaluatedPeriodDays: 30,
+    evaluatedPeriodDays: validMatches.length ? Math.ceil((now - Math.min(...validMatches.map((m) => Date.parse(m.gameCreationAt)))) / 86400000) : 0,
     topScore: posScores.TOP,
     jugScore: posScores.JUG,
     midScore: posScores.MID,

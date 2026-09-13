@@ -89,10 +89,13 @@ export function MultiTeamBuilder({ players, ratings = {}, onTeamsSaved }: Props)
   // 수동 스왑 (실시간 반응형 갱신)
   const handleSwap = (p1Id: string, p2Id: string) => {
     if (!currentPlan) return;
-    const updated = swapMultiTeamPlayers(currentPlan, p1Id, p2Id, ratings);
+    try {
+    const updated = swapMultiTeamPlayers(currentPlan, p1Id, p2Id, ratings, { pinnedPositions, pinnedTeams, pairedPlayers, isolatedPlayers });
     const newPlans = [...plans];
     newPlans[activePlanIndex] = updated;
     setPlans(newPlans);
+    setError('');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '교환할 수 없습니다.'); }
   };
 
   // 편성된 팀 일괄 DB 커스텀 팀으로 저장

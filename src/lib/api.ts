@@ -13,7 +13,6 @@ import type {
 } from '../types';
 import { translateApiError } from '../i18n';
 import { getAuthSession } from './auth';
-import { calculatePowerRating, type PlayerRankInfo } from '../../server/lib/powerRating.js';
 import {
   getLocalCustomTeams,
   saveLocalCustomTeam,
@@ -96,93 +95,16 @@ export const api = {
 
   // Match-v5 전적 수집 및 전력 분석 (서버 미지원 시 로컬 연산 즉시 실행)
   fetchPlayerMatches: async (params: { playerId?: string; riotId?: string; count?: number; queueFilter?: string }) => {
-    if (serverCapabilities.analysis) {
-      try {
-        return await request<{
-          puuid: string;
-          riotId: string;
-          totalMatchesCount: number;
-          newlyFetchedCount: number;
-          cachedMatchesCount: number;
-          rating: PowerRating;
-          recentMatches: unknown[];
-          warnings: string[];
-        }>('/api/riot/matches', { method: 'POST', body: JSON.stringify(params) });
-      } catch {
-        // 서버 실패 시 아래 로컬 연산으로 폴백
-      }
-    }
-    const rankInfo: PlayerRankInfo = {
-      inhouseTier: 'C',
-      inhouseScore: 7,
-      currentSoloTier: null,
-      currentSoloDivision: null,
-      currentSoloLp: null,
-      historicalSoloTier: null,
-      historicalSoloSeason: null,
-      historicalFlexTier: null,
-    };
-    const computed = calculatePowerRating(rankInfo, []);
-    const fallbackRating: PowerRating = {
-      ...computed,
-      playerId: params.playerId || 'local-player',
-      calculatedAt: new Date().toISOString(),
-    };
-    return {
-      puuid: 'local-puuid',
-      riotId: params.riotId || '선수#KR1',
-      totalMatchesCount: 0,
-      newlyFetchedCount: 0,
-      cachedMatchesCount: 0,
-      rating: fallbackRating,
-      recentMatches: [],
-      warnings: ['로컬 기본 추정치가 적용되었습니다.'],
-    };
+    return request<{ puuid: string; riotId: string; totalMatchesCount: number; newlyFetchedCount: number; cachedMatchesCount: number; rating: PowerRating; recentMatches: unknown[]; warnings: string[] }>('/api/riot/matches', { method: 'POST', body: JSON.stringify(params) });
   },
 
   fetchPowerRatings: async (): Promise<Record<string, PowerRating>> => {
-    if (serverCapabilities.analysis) {
-      try {
-        const res = await request<{ ratings: Record<string, PowerRating> }>('/api/analysis/power');
-        return res.ratings;
-      } catch {
-        // 폴백
-      }
-    }
-    const cached = localStorage.getItem('huh_cached_power_ratings');
-    if (cached) {
-      try { return JSON.parse(cached) as Record<string, PowerRating>; } catch { /* ignore */ }
-    }
-    return {};
+    const res = await request<{ ratings: Record<string, PowerRating> }>('/api/analysis/power');
+    return res.ratings;
   },
 
   fetchPlayerPowerDetail: async (playerId: string): Promise<PlayerPowerDetail> => {
-    if (serverCapabilities.analysis) {
-      try {
-        return await request<PlayerPowerDetail>(`/api/analysis/power?playerId=${encodeURIComponent(playerId)}`);
-      } catch {
-        // 폴백
-      }
-    }
-    const rankInfo: PlayerRankInfo = {
-      inhouseTier: 'C',
-      inhouseScore: 7,
-      currentSoloTier: null,
-      currentSoloDivision: null,
-      currentSoloLp: null,
-      historicalSoloTier: null,
-      historicalSoloSeason: null,
-      historicalFlexTier: null,
-    };
-    const rating = calculatePowerRating(rankInfo, []);
-    return {
-      playerId,
-      rating: { ...rating, playerId, calculatedAt: new Date().toISOString() },
-      topChampions: [],
-      positionStats: [],
-      totalCachedMatches: 0,
-      lastCalculatedAt: new Date().toISOString(),
-    };
+    return request<PlayerPowerDetail>('/api/analysis/power?playerId=' + encodeURIComponent(playerId));
   },
 
   // 커스텀 팀 (로컬 퍼스트: 서버 미지원 시 브라우저 콘솔 에러 없이 로컬 스토리지 즉시 사용)

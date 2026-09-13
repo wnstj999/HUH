@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMultiTeams, POSITIONS } from '../src/lib/multiTeamBalancer';
+import { buildMultiTeams, swapMultiTeamPlayers, POSITIONS } from '../src/lib/multiTeamBalancer';
 import type { Player, TeamConstraints } from '../src/types';
 
 function makeMockPlayer(index: number, positions: Array<'TOP' | 'JUG' | 'MID' | 'ADC' | 'SUP'>, score = 10): Player {
@@ -39,6 +39,20 @@ function makeMockPlayer(index: number, positions: Array<'TOP' | 'JUG' | 'MID' | 
 }
 
 describe('다팀 자동 편성 엔진 (buildMultiTeams)', () => {
+  it('중복 고정 슬롯과 중복 참가자를 거절한다', () => {
+    const players = Array.from({ length: 10 }, (_, i) => makeMockPlayer(i, [...POSITIONS]));
+    expect(() => buildMultiTeams([...players.slice(0, 9), players[0]!])).toThrow('중복');
+    expect(() => buildMultiTeams(players, {}, { pinnedTeams: { player_0: 0, player_1: 0 }, pinnedPositions: { player_0: 'TOP', player_1: 'TOP' }, pairedPlayers: [], isolatedPlayers: [] })).toThrow('같은 포지션');
+  });
+
+  it('신뢰도를 과장하지 않고 수동 교환에서도 고정 조건을 지킨다', () => {
+    const players = Array.from({ length: 10 }, (_, i) => makeMockPlayer(i, [...POSITIONS]));
+    const constraints: TeamConstraints = { pinnedTeams: { player_0: 0 }, pinnedPositions: {}, pairedPlayers: [], isolatedPlayers: [] };
+    const plan = buildMultiTeams(players, {}, constraints).plans[0]!;
+    expect(plan.teams.every((team) => team.confidence === 'LOW')).toBe(true);
+    const opponent = plan.teams[1]!.assignments[0]!.player.id;
+    expect(() => swapMultiTeamPlayers(plan, 'player_0', opponent, {}, constraints)).toThrow('위반');
+  });
   it('10명 참가 시 2팀, 각 팀 5개 포지션이 정확히 배정된다', () => {
     // 10명 생성 (포지션별 2명씩)
     const players: Player[] = [
