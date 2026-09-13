@@ -9,6 +9,7 @@ export default handler(async (req, res) => {
   let riotConfigured = Boolean(process.env.RIOT_API_KEY);
   try { riotConfigured = (await getRiotKeyStatus()).configured; } catch { /* retain environment fallback */ }
   res.status(200).json({
+    version: 'huh-v2-20260913',
     status: database ? 'ok' : 'degraded', backend: true, database,
     riotConfigured, opggEnabled: process.env.OPGG_SCRAPING_ENABLED?.toLowerCase() === 'true',
     tournamentEnabled: process.env.TOURNAMENT_API_ENABLED?.toLowerCase() === 'true', timestamp: new Date().toISOString(),
