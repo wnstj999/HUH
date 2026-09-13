@@ -57,8 +57,24 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body;
 }
 
+let serverCapabilities: { tournament: boolean; customTeams: boolean; analysis: boolean } = {
+  tournament: false,
+  customTeams: false,
+  analysis: false,
+};
+
 export const api = {
-  health: () => request<HealthStatus>('/api/health'),
+  health: async () => {
+    const res = await request<HealthStatus>('/api/health');
+    const extra = res as unknown as Record<string, unknown>;
+    const enabled = Boolean(res.tournamentEnabled || extra.version === 'v1.1-consolidated');
+    serverCapabilities = {
+      tournament: enabled,
+      customTeams: enabled,
+      analysis: enabled,
+    };
+    return res;
+  },
   players: () => request<{ players: Player[] }>('/api/players').then((result) => result.players),
   createPlayer: (input: PlayerInput) => request<{ player: Player }>('/api/players', { method: 'POST', body: JSON.stringify(input) }).then((result) => result.player),
   updatePlayer: (id: string, input: Partial<PlayerInput>) => request<{ player: Player }>(`/api/players/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((result) => result.player),
@@ -78,98 +94,108 @@ export const api = {
   updateMatch: (id: string, input: Partial<Pick<InhouseMatch, 'status' | 'winnerTeam' | 'startedAt' | 'endedAt' | 'durationSeconds'>>) => request<{ match: InhouseMatch }>(`/api/matches/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((result) => result.match),
   updateParticipant: (id: string, input: Record<string, string | number | null>) => request(`/api/match-participants/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
 
-  // Match-v5 전적 수집 및 전력 분석 (서버 시도 -> 실패 시 로컬 연산 폴백)
+  // Match-v5 전적 수집 및 전력 분석 (서버 미지원 시 로컬 연산 즉시 실행)
   fetchPlayerMatches: async (params: { playerId?: string; riotId?: string; count?: number; queueFilter?: string }) => {
-    try {
-      return await request<{
-        puuid: string;
-        riotId: string;
-        totalMatchesCount: number;
-        newlyFetchedCount: number;
-        cachedMatchesCount: number;
-        rating: PowerRating;
-        recentMatches: unknown[];
-        warnings: string[];
-      }>('/api/riot/matches', { method: 'POST', body: JSON.stringify(params) });
-    } catch {
-      // 서버 배포 지연 시 로컬 폴백 점수 계산
-      const rankInfo: PlayerRankInfo = {
-        inhouseTier: 'C',
-        inhouseScore: 7,
-        currentSoloTier: null,
-        currentSoloDivision: null,
-        currentSoloLp: null,
-        historicalSoloTier: null,
-        historicalSoloSeason: null,
-        historicalFlexTier: null,
-      };
-      const computed = calculatePowerRating(rankInfo, []);
-      const fallbackRating: PowerRating = {
-        ...computed,
-        playerId: params.playerId || 'local-player',
-        calculatedAt: new Date().toISOString(),
-      };
-      return {
-        puuid: 'local-puuid',
-        riotId: params.riotId || '선수#KR1',
-        totalMatchesCount: 0,
-        newlyFetchedCount: 0,
-        cachedMatchesCount: 0,
-        rating: fallbackRating,
-        recentMatches: [],
-        warnings: ['서버 배포 대기 중으로 기본 추정치가 적용되었습니다.'],
-      };
+    if (serverCapabilities.analysis) {
+      try {
+        return await request<{
+          puuid: string;
+          riotId: string;
+          totalMatchesCount: number;
+          newlyFetchedCount: number;
+          cachedMatchesCount: number;
+          rating: PowerRating;
+          recentMatches: unknown[];
+          warnings: string[];
+        }>('/api/riot/matches', { method: 'POST', body: JSON.stringify(params) });
+      } catch {
+        // 서버 실패 시 아래 로컬 연산으로 폴백
+      }
     }
+    const rankInfo: PlayerRankInfo = {
+      inhouseTier: 'C',
+      inhouseScore: 7,
+      currentSoloTier: null,
+      currentSoloDivision: null,
+      currentSoloLp: null,
+      historicalSoloTier: null,
+      historicalSoloSeason: null,
+      historicalFlexTier: null,
+    };
+    const computed = calculatePowerRating(rankInfo, []);
+    const fallbackRating: PowerRating = {
+      ...computed,
+      playerId: params.playerId || 'local-player',
+      calculatedAt: new Date().toISOString(),
+    };
+    return {
+      puuid: 'local-puuid',
+      riotId: params.riotId || '선수#KR1',
+      totalMatchesCount: 0,
+      newlyFetchedCount: 0,
+      cachedMatchesCount: 0,
+      rating: fallbackRating,
+      recentMatches: [],
+      warnings: ['로컬 기본 추정치가 적용되었습니다.'],
+    };
   },
 
   fetchPowerRatings: async (): Promise<Record<string, PowerRating>> => {
-    try {
-      const res = await request<{ ratings: Record<string, PowerRating> }>('/api/analysis/power');
-      return res.ratings;
-    } catch {
-      // 서버 미응답 시: 로컬 스토리지에 캐시된 점수가 있으면 반환
-      const cached = localStorage.getItem('huh_cached_power_ratings');
-      if (cached) {
-        try { return JSON.parse(cached) as Record<string, PowerRating>; } catch { /* ignore */ }
+    if (serverCapabilities.analysis) {
+      try {
+        const res = await request<{ ratings: Record<string, PowerRating> }>('/api/analysis/power');
+        return res.ratings;
+      } catch {
+        // 폴백
       }
-      return {};
     }
+    const cached = localStorage.getItem('huh_cached_power_ratings');
+    if (cached) {
+      try { return JSON.parse(cached) as Record<string, PowerRating>; } catch { /* ignore */ }
+    }
+    return {};
   },
 
   fetchPlayerPowerDetail: async (playerId: string): Promise<PlayerPowerDetail> => {
-    try {
-      return await request<PlayerPowerDetail>(`/api/analysis/power?playerId=${encodeURIComponent(playerId)}`);
-    } catch {
-      const rankInfo: PlayerRankInfo = {
-        inhouseTier: 'C',
-        inhouseScore: 7,
-        currentSoloTier: null,
-        currentSoloDivision: null,
-        currentSoloLp: null,
-        historicalSoloTier: null,
-        historicalSoloSeason: null,
-        historicalFlexTier: null,
-      };
-      const rating = calculatePowerRating(rankInfo, []);
-      return {
-        playerId,
-        rating: { ...rating, playerId, calculatedAt: new Date().toISOString() },
-        topChampions: [],
-        positionStats: [],
-        totalCachedMatches: 0,
-        lastCalculatedAt: new Date().toISOString(),
-      };
+    if (serverCapabilities.analysis) {
+      try {
+        return await request<PlayerPowerDetail>(`/api/analysis/power?playerId=${encodeURIComponent(playerId)}`);
+      } catch {
+        // 폴백
+      }
     }
+    const rankInfo: PlayerRankInfo = {
+      inhouseTier: 'C',
+      inhouseScore: 7,
+      currentSoloTier: null,
+      currentSoloDivision: null,
+      currentSoloLp: null,
+      historicalSoloTier: null,
+      historicalSoloSeason: null,
+      historicalFlexTier: null,
+    };
+    const rating = calculatePowerRating(rankInfo, []);
+    return {
+      playerId,
+      rating: { ...rating, playerId, calculatedAt: new Date().toISOString() },
+      topChampions: [],
+      positionStats: [],
+      totalCachedMatches: 0,
+      lastCalculatedAt: new Date().toISOString(),
+    };
   },
 
-  // 커스텀 팀 (서버 시도 -> 실패 시 로컬 스토리지 완벽 폴백)
+  // 커스텀 팀 (로컬 퍼스트: 서버 미지원 시 브라우저 콘솔 에러 없이 로컬 스토리지 즉시 사용)
   customTeams: async (): Promise<CustomTeam[]> => {
-    try {
-      const res = await request<{ teams: CustomTeam[] }>('/api/custom-teams');
-      return res.teams;
-    } catch {
-      return getLocalCustomTeams();
+    if (serverCapabilities.customTeams) {
+      try {
+        const res = await request<{ teams: CustomTeam[] }>('/api/custom-teams');
+        return res.teams;
+      } catch {
+        // 폴백
+      }
     }
+    return getLocalCustomTeams();
   },
 
   createCustomTeam: async (input: {
@@ -178,46 +204,58 @@ export const api = {
     notes?: string;
     members: Array<{ position: 'TOP' | 'JUG' | 'MID' | 'ADC' | 'SUP'; riotId: string; playerName?: string; playerId?: string; isCaptain?: boolean }>;
   }): Promise<CustomTeam> => {
-    try {
-      const res = await request<{ team: CustomTeam }>('/api/custom-teams', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      });
-      return res.team;
-    } catch {
-      return saveLocalCustomTeam(input);
+    if (serverCapabilities.customTeams) {
+      try {
+        const res = await request<{ team: CustomTeam }>('/api/custom-teams', {
+          method: 'POST',
+          body: JSON.stringify(input),
+        });
+        return res.team;
+      } catch {
+        // 폴백
+      }
     }
+    return saveLocalCustomTeam(input);
   },
 
   updateCustomTeam: async (id: string, input: Partial<CustomTeam>): Promise<CustomTeam> => {
-    try {
-      const res = await request<{ team: CustomTeam }>(`/api/custom-teams/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(input),
-      });
-      return res.team;
-    } catch {
-      return updateLocalCustomTeam(id, input);
+    if (serverCapabilities.customTeams) {
+      try {
+        const res = await request<{ team: CustomTeam }>(`/api/custom-teams/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(input),
+        });
+        return res.team;
+      } catch {
+        // 폴백
+      }
     }
+    return updateLocalCustomTeam(id, input);
   },
 
   deleteCustomTeam: async (id: string): Promise<{ success: boolean; id: string }> => {
-    try {
-      return await request<{ success: boolean; id: string }>(`/api/custom-teams/${id}`, { method: 'DELETE' });
-    } catch {
-      deleteLocalCustomTeam(id);
-      return { success: true, id };
+    if (serverCapabilities.customTeams) {
+      try {
+        return await request<{ success: boolean; id: string }>(`/api/custom-teams/${id}`, { method: 'DELETE' });
+      } catch {
+        // 폴백
+      }
     }
+    deleteLocalCustomTeam(id);
+    return { success: true, id };
   },
 
-  // 토너먼트 (서버 시도 -> 실패 시 로컬 스토리지 완벽 폴백)
+  // 토너먼트 (로컬 퍼스트: 서버 미지원 시 브라우저 콘솔 에러 없이 로컬 스토리지 즉시 사용)
   tournaments: async (): Promise<Tournament[]> => {
-    try {
-      const res = await request<{ tournaments: Tournament[] }>('/api/tournaments');
-      return res.tournaments;
-    } catch {
-      return getLocalTournaments();
+    if (serverCapabilities.tournament) {
+      try {
+        const res = await request<{ tournaments: Tournament[] }>('/api/tournaments');
+        return res.tournaments;
+      } catch {
+        // 폴백
+      }
     }
+    return getLocalTournaments();
   },
 
   createTournament: async (input: {
@@ -227,48 +265,59 @@ export const api = {
     seedingType: 'POWER_SEED' | 'RANDOM' | 'MANUAL';
     teamIds: string[];
   }): Promise<Tournament> => {
-    try {
-      const res = await request<{ tournament: Tournament }>('/api/tournaments', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      });
-      return res.tournament;
-    } catch {
-      return createLocalTournament(input);
+    if (serverCapabilities.tournament) {
+      try {
+        const res = await request<{ tournament: Tournament }>('/api/tournaments', {
+          method: 'POST',
+          body: JSON.stringify(input),
+        });
+        return res.tournament;
+      } catch {
+        // 폴백
+      }
     }
+    return createLocalTournament(input);
   },
 
   tournamentDetail: async (id: string): Promise<{ tournament: Tournament; matches: TournamentMatch[] }> => {
-    try {
-      return await request<{ tournament: Tournament; matches: TournamentMatch[] }>(`/api/tournaments/${id}`);
-    } catch {
-      return getLocalTournamentDetail(id);
+    if (serverCapabilities.tournament) {
+      try {
+        return await request<{ tournament: Tournament; matches: TournamentMatch[] }>(`/api/tournaments/${id}`);
+      } catch {
+        // 폴백
+      }
     }
+    return getLocalTournamentDetail(id);
   },
 
   updateTournamentMatch: async (
     id: string,
     input: { matchId: string; winnerTeamId: string | null; team1Score: number; team2Score: number; forceUpdate?: boolean }
   ): Promise<{ success: boolean; matches: TournamentMatch[] }> => {
-    try {
-      return await request<{ success: boolean; matches: TournamentMatch[] }>(`/api/tournaments/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(input),
-      });
-    } catch (err) {
-      if (err instanceof ApiConflictError) throw err;
-      const matches = updateLocalTournamentMatch(id, input);
-      return { success: true, matches };
+    if (serverCapabilities.tournament) {
+      try {
+        return await request<{ success: boolean; matches: TournamentMatch[] }>(`/api/tournaments/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(input),
+        });
+      } catch (err) {
+        if (err instanceof ApiConflictError) throw err;
+      }
     }
+    const matches = updateLocalTournamentMatch(id, input);
+    return { success: true, matches };
   },
 
   deleteTournament: async (id: string): Promise<{ success: boolean; id: string }> => {
-    try {
-      return await request<{ success: boolean; id: string }>(`/api/tournaments/${id}`, { method: 'DELETE' });
-    } catch {
-      deleteLocalTournament(id);
-      return { success: true, id };
+    if (serverCapabilities.tournament) {
+      try {
+        return await request<{ success: boolean; id: string }>(`/api/tournaments/${id}`, { method: 'DELETE' });
+      } catch {
+        // 폴백
+      }
     }
+    deleteLocalTournament(id);
+    return { success: true, id };
   },
 };
 
