@@ -88,14 +88,17 @@ export default handler(async (req, res) => {
   if (action === 'matches') {
     const playerId = body.playerId ? String(body.playerId) : null;
     let riotId = body.riotId ? String(body.riotId) : null;
-    const count = Math.min(Math.max(Number(body.count || 20), 5), 100);
+    const count = Number(body.count ?? 20);
     const queueFilter = body.queueFilter ? String(body.queueFilter).toUpperCase() : 'ALL';
+    if (!Number.isInteger(count) || count < 5 || count > 100) throw new HttpError(400, 'INVALID_COUNT', '조회 경기 수는 5~100 사이의 정수여야 합니다.');
+    if (!['ALL', 'SOLO', 'FLEX'].includes(queueFilter)) throw new HttpError(400, 'INVALID_QUEUE', '솔로랭크·자유랭크·전체 중 선택해 주세요.');
 
     const client = db();
     let playerRow: Record<string, unknown> | null = null;
 
     if (playerId) {
       const fetchRes = await client.from('players').select('*').eq('id', playerId).maybeSingle();
+      if (fetchRes.error) throw new HttpError(500, 'DATABASE_ERROR', '플레이어 조회에 실패했습니다.');
       playerRow = fetchRes.data as Record<string, unknown> | null;
       if (!playerRow) throw new HttpError(404, 'PLAYER_NOT_FOUND', '등록된 플레이어를 찾을 수 없습니다.');
       riotId = String(playerRow.riot_id);
@@ -112,11 +115,12 @@ export default handler(async (req, res) => {
 
     const matchIds = await getMatchIds(puuid, key, { count, queue: queueIdParam });
 
-    const { data: cachedMatches } = await client
+    const { data: cachedMatches, error: cacheError } = await client
       .from('player_match_stats')
       .select('match_id')
       .eq('puuid', puuid)
       .in('match_id', matchIds.length > 0 ? matchIds : ['dummy']);
+    if (cacheError) throw new HttpError(500, 'DATABASE_ERROR', '저장된 전적 조회에 실패했습니다.');
 
     const cachedSet = new Set((cachedMatches || []).map((m: { match_id: string }) => m.match_id));
     const newMatchIds = matchIds.filter((id) => !cachedSet.has(id));
@@ -154,7 +158,7 @@ export default handler(async (req, res) => {
           gameCreationAt: gameCreationIso,
         };
 
-        await client.from('player_match_stats').upsert({
+        const { error: saveError } = await client.from('player_match_stats').upsert({
           puuid,
           match_id: matchId,
           queue_id: qId,
@@ -173,20 +177,25 @@ export default handler(async (req, res) => {
           game_duration: detail.info.gameDuration ?? 0,
           game_creation_at: gameCreationIso,
         }, { onConflict: 'puuid,match_id' });
+        if (saveError) throw new HttpError(500, 'DATABASE_ERROR', '전적 DB 저장에 실패했습니다.');
 
         newlySaved.push(record);
         await new Promise((r) => setTimeout(r, 50));
       } catch (err) {
         warnings.push(`경기 ${matchId} 수집 실패: ${err instanceof Error ? err.message : String(err)}`);
+        if (err instanceof HttpError && [401, 403, 429].includes(err.status)) break;
       }
     }
 
-    const { data: allStoredMatches } = await client
+    const { data: allStoredMatches, error: storedError } = await client
       .from('player_match_stats')
       .select('*')
       .eq('puuid', puuid)
+      .in('match_id', matchIds.length ? matchIds : ['no-matches'])
       .order('game_creation_at', { ascending: false })
-      .limit(100);
+      .limit(count);
+    if (storedError) throw new HttpError(500, 'DATABASE_ERROR', '분석 대상 전적을 읽지 못했습니다.');
+    if (matchIds.length && !allStoredMatches?.length && warnings.length) throw new HttpError(502, 'MATCH_COLLECTION_FAILED', '전적 수집에 실패했습니다. 기존 분석 점수는 유지됩니다.');
 
     const mappedMatches: PlayerMatchRecord[] = (allStoredMatches || []).map((row) => ({
       matchId: String(row.match_id),
@@ -221,7 +230,7 @@ export default handler(async (req, res) => {
     const rating = calculatePowerRating(rankInfo, mappedMatches);
 
     if (playerId) {
-      await client.from('player_power_ratings').upsert({
+      const { error: ratingError } = await client.from('player_power_ratings').upsert({
         player_id: playerId,
         overall_score: rating.overallScore,
         confidence_level: rating.confidenceLevel,
@@ -243,6 +252,7 @@ export default handler(async (req, res) => {
         calculated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }, { onConflict: 'player_id' });
+      if (ratingError) throw new HttpError(500, 'DATABASE_ERROR', '분석 점수 DB 저장에 실패했습니다. 수집된 경기 기록은 유지됩니다.');
     }
 
     res.status(200).json({
@@ -251,7 +261,7 @@ export default handler(async (req, res) => {
       totalMatchesCount: mappedMatches.length,
       newlyFetchedCount: newlySaved.length,
       cachedMatchesCount: cachedSet.size,
-      rating,
+      rating: { ...rating, playerId, calculatedAt: new Date().toISOString() },
       recentMatches: mappedMatches.slice(0, 20),
       warnings,
     });

@@ -1,5 +1,6 @@
 import type { CustomTeam, CustomTeamMember, Position, PowerRating } from '../types';
 import { POSITIONS } from './multiTeamBalancer';
+import { calculatePowerRating } from '../../server/lib/powerRating';
 
 export interface LaneComparison {
   position: Position;
@@ -89,6 +90,7 @@ export function evaluateTeamPower(
   let totalScore = 0;
   const reasons: string[] = [];
   let lowCount = 0;
+  let mediumCount = 0;
 
   const positionsObj: TeamPowerAnalysis['positions'] = {
     TOP: { member: null, score: 1400, isMainRole: false },
@@ -112,10 +114,10 @@ export function evaluateTeamPower(
         score = Number(rating[posScoreKey] ?? rating.overallScore ?? 1500);
         const posGamesKey = `${pos.toLowerCase()}Games` as keyof PowerRating;
         isMain = Number(rating[posGamesKey] ?? 0) >= 5;
-        if (rating.confidenceLevel === 'LOW') lowCount += 1;
+        if (rating.confidenceLevel === 'LOW' || !isMain) lowCount += 1;
+        else if (rating.confidenceLevel === 'MEDIUM') mediumCount += 1;
       } else if (member.player) {
-        const base = 1000 + ((member.player.inhouseScore || 7) - 4) * 100;
-        score = base;
+        score = calculatePowerRating({ ...member.player, historicalSoloTier: null, historicalSoloSeason: null, historicalFlexTier: null }, []).overallScore;
         lowCount += 1;
       } else {
         score = 1400;
@@ -135,10 +137,10 @@ export function evaluateTeamPower(
   }
 
   let confidence: 'HIGH' | 'MEDIUM' | 'LOW' = 'HIGH';
-  if (lowCount >= 3 || team.members.length < 5) {
+  if (lowCount >= 1 || team.members.length < 5) {
     confidence = 'LOW';
     reasons.push('팀원의 전적 데이터 표본이 부족하거나 인원이 미완성입니다.');
-  } else if (lowCount >= 1) {
+  } else if (mediumCount >= 1) {
     confidence = 'MEDIUM';
     reasons.push('일부 팀원의 전적 지표가 적어 추정치가 보정되었습니다.');
   }

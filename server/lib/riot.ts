@@ -51,7 +51,8 @@ async function riotFetch<T>(url: string, key: string, retryCount = 0): Promise<T
 
   if (response.status === 429 && retryCount < 2) {
     const retryAfterSeconds = Number(response.headers.get('Retry-After') || '2');
-    const waitMs = Math.min(Math.max(retryAfterSeconds * 1000, 1500), 5000);
+    if (!Number.isFinite(retryAfterSeconds) || retryAfterSeconds > 5) throw new HttpError(429, 'RIOT_RATE_LIMIT', 'Riot 요청 제한 대기 시간이 깁니다. 잠시 후 다시 시도하세요.');
+    const waitMs = Math.max(retryAfterSeconds * 1000, 1500);
     await sleep(waitMs);
     return riotFetch<T>(url, key, retryCount + 1);
   }
