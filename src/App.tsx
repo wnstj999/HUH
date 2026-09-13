@@ -1,33 +1,84 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type PropsWithChildren, type ReactNode } from 'react';
 import { NavLink, Route, Routes, useNavigate } from 'react-router-dom';
-import { Activity, BarChart3, CalendarPlus, ChevronDown, CircleGauge, History, Languages, LogOut, Pencil, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Activity, BarChart3, CalendarPlus, ChevronDown, CircleGauge, History, Languages, LogOut, Pencil, RefreshCw, Save, Settings as SettingsIcon, Shield, ShieldCheck, Sparkles, Trash2, Trophy, UserPlus, Users, X } from 'lucide-react';
 import { useI18n, type MessageKey } from './i18n';
 import { api, API_BASE_URL } from './lib/api';
 import { formatDate, formatDuration, formatRank } from './lib/format';
 import { clearLegacyAccessKey, clearLegacyBrowserKeys, getLegacyRiotKey } from './lib/storage';
 import { buildBalancedTeams, REQUIRED_POSITIONS, swapAssignments } from './lib/teamBalancer';
 import { parseRiotId } from './lib/riotId';
-import { TIER_SCORES, type BalancedTeams, type HistoricalRank, type HealthStatus, type InhouseMatch, type InhouseTier, type MatchParticipant, type Player, type PlayerInput, type Position, type SeasonRankRecord } from './types';
+import {
+  TIER_SCORES,
+  type BalancedTeams,
+  type CustomTeam,
+  type HealthStatus,
+  type HistoricalRank,
+  type InhouseMatch,
+  type InhouseTier,
+  type MatchParticipant,
+  type Player,
+  type PlayerInput,
+  type Position,
+  type PowerRating,
+  type SeasonRankRecord,
+  type Tournament,
+} from './types';
+import { PlayerAnalysisModal } from './components/PlayerAnalysisModal';
+import { MultiTeamBuilder } from './components/MultiTeamBuilder';
+import { CustomTeamManager } from './components/CustomTeamManager';
+import { TournamentPage } from './components/TournamentPage';
 
-interface AppData { players: Player[]; matches: InhouseMatch[]; health: HealthStatus | null }
+interface AppData {
+  players: Player[];
+  matches: InhouseMatch[];
+  health: HealthStatus | null;
+  ratings: Record<string, PowerRating>;
+  teams: CustomTeam[];
+  tournaments: Tournament[];
+}
 
 function useAppData() {
-  const [data, setData] = useState<AppData>({ players: [], matches: [], health: null });
+  const [data, setData] = useState<AppData>({
+    players: [],
+    matches: [],
+    health: null,
+    ratings: {},
+    teams: [],
+    tournaments: [],
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
   const reload = useCallback(async () => {
-    setLoading(true); setError('');
-    const results = await Promise.allSettled([api.players(), api.matches(), api.health()]);
-    const firstError = results.find((result) => result.status === 'rejected');
+    setLoading(true);
+    setError('');
+    const results = await Promise.allSettled([
+      api.players(),
+      api.matches(),
+      api.health(),
+      api.fetchPowerRatings().catch(() => ({})),
+      api.customTeams().catch(() => []),
+      api.tournaments().catch(() => []),
+    ]);
+    const firstError = results.slice(0, 3).find((result) => result.status === 'rejected');
     setData({
       players: results[0].status === 'fulfilled' ? results[0].value : [],
       matches: results[1].status === 'fulfilled' ? results[1].value : [],
       health: results[2].status === 'fulfilled' ? results[2].value : null,
+      ratings: results[3].status === 'fulfilled' ? results[3].value : {},
+      teams: results[4].status === 'fulfilled' ? results[4].value : [],
+      tournaments: results[5].status === 'fulfilled' ? results[5].value : [],
     });
-    if (firstError?.status === 'rejected') setError(firstError.reason instanceof Error ? firstError.reason.message : '데이터를 불러오지 못했습니다.');
+    if (firstError?.status === 'rejected') {
+      setError(firstError.reason instanceof Error ? firstError.reason.message : '데이터를 불러오지 못했습니다.');
+    }
     setLoading(false);
   }, []);
-  useEffect(() => { void reload(); }, [reload]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
   return { data, loading, error, reload };
 }
 
@@ -38,66 +89,174 @@ function StatusDot({ ok, waiting = false }: { ok: boolean; waiting?: boolean }) 
 function Shell({ children, userEmail, onSignOut }: PropsWithChildren<{ userEmail?: string; onSignOut?: () => void }>) {
   const { language, setLanguage, t } = useI18n();
   const nav: Array<[string, MessageKey, ReactNode]> = [
-    ['/', 'dashboard', <CircleGauge />], ['/players', 'players', <Users />], ['/builder', 'builder', <CalendarPlus />],
-    ['/history', 'history', <History />], ['/stats', 'stats', <BarChart3 />], ['/settings', 'settings', <SettingsIcon />],
+    ['/', 'dashboard', <CircleGauge size={17} />],
+    ['/players', 'players', <Users size={17} />],
+    ['/multi-team', 'multiTeam', <Sparkles size={17} />],
+    ['/custom-teams', 'customTeams', <Shield size={17} />],
+    ['/tournament', 'tournament', <Trophy size={17} />],
+    ['/builder', 'builder', <CalendarPlus size={17} />],
+    ['/history', 'history', <History size={17} />],
+    ['/stats', 'stats', <BarChart3 size={17} />],
+    ['/settings', 'settings', <SettingsIcon size={17} />],
   ];
-  return <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">H</span><div><strong>HUH</strong><small>INHOUSE CONTROL</small></div></div>
-      <nav className="main-nav" aria-label="Main navigation">
-        {nav.map(([path, key, icon]) => <NavLink key={path} end={path === '/'} to={path}>{icon}<span>{t(key)}</span></NavLink>)}
-      </nav>
-      <div className="sidebar-foot"><ShieldCheck size={16} /><span>PRIVATE COMMUNITY</span></div>
-    </aside>
-    <div className="content-column">
-      <header className="topbar">
-        <div className="live-label"><span className="pulse" /> LIVE OPERATIONS</div>
-        <div className="topbar-actions">{userEmail && <span className="user-email">{userEmail}</span>}<button className="language-toggle" onClick={() => setLanguage(language === 'ko' ? 'en' : 'ko')} aria-label="Change language"><Languages size={16} /><strong className={language === 'ko' ? 'on' : ''}>KR</strong><span>|</span><strong className={language === 'en' ? 'on' : ''}>EN</strong></button>{onSignOut && <button className="language-toggle" onClick={onSignOut}><LogOut size={16} />{t('signOut')}</button>}</div>
-      </header>
-      <main className="main-content">{children}</main>
-      <footer><span>{t('footer')}</span><NavLink to="/privacy">{t('privacy')}</NavLink><NavLink to="/terms">{t('terms')}</NavLink></footer>
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark">H</span>
+          <div>
+            <strong>HUH</strong>
+            <small>INHOUSE & TOURNEY</small>
+          </div>
+        </div>
+        <nav className="main-nav" aria-label="Main navigation">
+          {nav.map(([path, key, icon]) => (
+            <NavLink key={path} end={path === '/'} to={path}>
+              {icon}
+              <span>{t(key)}</span>
+            </NavLink>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <ShieldCheck size={16} />
+          <span>COMMUNITY OPERATOR</span>
+        </div>
+      </aside>
+      <div className="content-column">
+        <header className="topbar">
+          <div className="live-label">
+            <span className="pulse" /> HUH TOURNAMENT & BALANCER
+          </div>
+          <div className="topbar-actions">
+            {userEmail && <span className="user-email">{userEmail}</span>}
+            <button
+              className="language-toggle"
+              onClick={() => setLanguage(language === 'ko' ? 'en' : 'ko')}
+              aria-label="Change language"
+            >
+              <Languages size={16} />
+              <strong className={language === 'ko' ? 'on' : ''}>KR</strong>
+              <span>|</span>
+              <strong className={language === 'en' ? 'on' : ''}>EN</strong>
+            </button>
+            {onSignOut && (
+              <button className="language-toggle" onClick={onSignOut}>
+                <LogOut size={16} />
+                {t('signOut')}
+              </button>
+            )}
+          </div>
+        </header>
+        <main className="main-content">{children}</main>
+        <footer>
+          <span>{t('footer')}</span>
+          <NavLink to="/privacy">{t('privacy')}</NavLink>
+          <NavLink to="/terms">{t('terms')}</NavLink>
+        </footer>
+      </div>
     </div>
-  </div>;
+  );
 }
 
 function PageHeader({ title, kicker, actions }: { title: string; kicker?: string; actions?: ReactNode }) {
-  return <div className="page-header"><div>{kicker && <p className="kicker">{kicker}</p>}<h1>{title}</h1></div>{actions && <div className="header-actions">{actions}</div>}</div>;
+  return (
+    <div className="page-header">
+      <div>
+        {kicker && <p className="kicker">{kicker}</p>}
+        <h1>{title}</h1>
+      </div>
+      {actions && <div className="header-actions">{actions}</div>}
+    </div>
+  );
 }
 
 function Alert({ message, onRetry }: { message: string; onRetry?: () => void }) {
   const { t } = useI18n();
-  return <div className="alert"><strong>{t('error')}</strong><span>{message}</span>{onRetry && <button className="text-button" onClick={onRetry}>{t('retry')}</button>}</div>;
+  return (
+    <div className="alert">
+      <strong>{t('error')}</strong>
+      <span>{message}</span>
+      {onRetry && (
+        <button className="text-button" onClick={onRetry}>
+          {t('retry')}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function Dashboard({ data, loading, error, reload }: ReturnType<typeof useAppData>) {
   const { t, language } = useI18n();
   const activePlayers = data.players.filter((player) => player.active);
+  const ratedCount = Object.keys(data.ratings).length;
   const recent = data.matches.slice(0, 5);
-  return <>
-    <PageHeader title={t('dashboard')} kicker="OPERATIONS OVERVIEW" actions={<button className="button secondary" onClick={reload}><RefreshCw size={16} />{t('refresh')}</button>} />
-    {error && <Alert message={error} onRetry={reload} />}
-    <section className="metric-grid">
-      <Metric label={t('registered')} value={activePlayers.length} hint="PLAYERS" />
-      <Metric label={t('participating')} value={activePlayers.filter((player) => player.participating).length} hint="TODAY" accent />
-      <Metric label={t('matches')} value={data.matches.length} hint="RECORDED" />
-      <Metric label={t('apiStatus')} value={data.health?.riotConfigured ? t('connected') : t('notConfigured')} hint="RIOT" status={Boolean(data.health?.riotConfigured)} />
-    </section>
-    <section className="split-grid">
-      <article className="panel wide"><div className="panel-head"><h2>{t('recentMatches')}</h2><NavLink className="text-link" to="/history">{t('history')} →</NavLink></div>
-        {loading ? <Empty text={t('loading')} /> : recent.length ? <div className="match-list">{recent.map((match) => <MatchSummary key={match.id} match={match} language={language} />)}</div> : <Empty text={t('emptyMatches')} />}
-      </article>
-      <article className="panel health-panel"><div className="panel-head"><h2>SYSTEM STATUS</h2><Activity size={18} /></div>
-        <StatusLine label={t('backend')} ok={Boolean(data.health?.backend)} />
-        <StatusLine label={t('database')} ok={Boolean(data.health?.database)} />
-        <StatusLine label={t('opgg')} ok={Boolean(data.health?.opggEnabled)} />
-        <StatusLine label={t('tournamentApi')} ok={false} waiting value={t('tournamentWaiting')} />
-      </article>
-    </section>
-  </>;
+
+  return (
+    <>
+      <PageHeader
+        title={t('dashboard')}
+        kicker="OPERATIONS & TOURNAMENT OVERVIEW"
+        actions={
+          <button className="button secondary" onClick={reload}>
+            <RefreshCw size={16} />
+            {t('refresh')}
+          </button>
+        }
+      />
+      {error && <Alert message={error} onRetry={reload} />}
+      <section className="metric-grid">
+        <Metric label={t('registered')} value={activePlayers.length} hint="PLAYERS" />
+        <Metric label={t('participating')} value={activePlayers.filter((player) => player.participating).length} hint="TODAY" accent />
+        <Metric label="전력 분석 완료" value={`${ratedCount} / ${activePlayers.length}`} hint="POWER RATINGS" />
+        <Metric label="커스텀 팀 / 대회" value={`${data.teams.length}팀 / ${data.tournaments.length}대회`} hint="TOURNAMENTS" />
+      </section>
+
+      <section className="split-grid">
+        <article className="panel wide">
+          <div className="panel-head">
+            <h2>{t('recentMatches')}</h2>
+            <NavLink className="text-link" to="/history">
+              {t('history')} →
+            </NavLink>
+          </div>
+          {loading ? (
+            <Empty text={t('loading')} />
+          ) : recent.length ? (
+            <div className="match-list">
+              {recent.map((match) => (
+                <MatchSummary key={match.id} match={match} language={language} />
+              ))}
+            </div>
+          ) : (
+            <Empty text={t('emptyMatches')} />
+          )}
+        </article>
+        <article className="panel health-panel">
+          <div className="panel-head">
+            <h2>SYSTEM & API STATUS</h2>
+            <Activity size={18} />
+          </div>
+          <StatusLine label={t('backend')} ok={Boolean(data.health?.backend)} />
+          <StatusLine label={t('database')} ok={Boolean(data.health?.database)} />
+          <StatusLine label="Match-v5 전적 엔진" ok={Boolean(data.health?.riotConfigured)} value={data.health?.riotConfigured ? '활성 (캐시 & 큐잉)' : 'API 키 필요'} />
+          <StatusLine label={t('tournamentApi')} ok={false} waiting value="수동 결과 운영 모드 (권한 대기)" />
+        </article>
+      </section>
+    </>
+  );
 }
 
 function Metric({ label, value, hint, accent, status }: { label: string; value: string | number; hint: string; accent?: boolean; status?: boolean }) {
-  return <article className={`metric ${accent ? 'accent' : ''}`}><div className="metric-top"><span>{label}</span>{status !== undefined && <StatusDot ok={status} />}</div><strong>{value}</strong><small>{hint}</small></article>;
+  return (
+    <article className={`metric ${accent ? 'accent' : ''}`}>
+      <div className="metric-top">
+        <span>{label}</span>
+        {status !== undefined && <StatusDot ok={status} />}
+      </div>
+      <strong>{value}</strong>
+      <small>{hint}</small>
+    </article>
+  );
 }
 function StatusLine({ label, ok, waiting, value }: { label: string; ok: boolean; waiting?: boolean; value?: string }) { const { t } = useI18n(); return <div className="status-line"><span><StatusDot ok={ok} waiting={waiting} />{label}</span><strong>{value || (ok ? t('connected') : t('notConfigured'))}</strong></div>; }
 function Empty({ text }: { text: string }) { return <div className="empty">{text}</div>; }
@@ -113,7 +272,10 @@ function PlayersPage({ data, loading, error, reload }: ReturnType<typeof useAppD
   const { t, language } = useI18n();
   const [query, setQuery] = useState(''); const [tier, setTier] = useState(''); const [position, setPosition] = useState(''); const [onlyPlaying, setOnlyPlaying] = useState(false);
   const [sort, setSort] = useState<{ key: 'displayName' | 'inhouseScore' | 'riotId' | 'participating' | 'updatedAt'; direction: 1 | -1 }>({ key: 'displayName', direction: 1 });
-  const [editing, setEditing] = useState<Player | null | undefined>(); const [historyModal, setHistoryModal] = useState<{ player: Player; queue: 'solo' | 'flex' } | null>(null); const [form, setForm] = useState<PlayerInput>(EMPTY_PLAYER); const [busy, setBusy] = useState(''); const [message, setMessage] = useState('');
+  const [editing, setEditing] = useState<Player | null | undefined>();
+  const [historyModal, setHistoryModal] = useState<{ player: Player; queue: 'solo' | 'flex' } | null>(null);
+  const [analysisPlayer, setAnalysisPlayer] = useState<Player | null>(null);
+  const [form, setForm] = useState<PlayerInput>(EMPTY_PLAYER); const [busy, setBusy] = useState(''); const [message, setMessage] = useState('');
   const filtered = useMemo(() => data.players.filter((player) => {
     const needle = query.toLocaleLowerCase();
     return (!needle || `${player.displayName} ${player.riotId}`.toLocaleLowerCase().includes(needle)) && (!tier || player.inhouseTier === tier) && (!position || player.positions.includes(position as Position)) && (!onlyPlaying || player.participating);
@@ -132,10 +294,42 @@ function PlayersPage({ data, loading, error, reload }: ReturnType<typeof useAppD
     <PageHeader title={t('players')} kicker="ROSTER DATABASE" actions={<><button className="button secondary" disabled={Boolean(busy)} onClick={refreshAll}><RefreshCw size={16} className={busy === 'all' ? 'spin' : ''} />{t('refreshAll')}</button><button className="button primary" onClick={() => open()}><UserPlus size={16} />{t('addPlayer')}</button></>} />
     {error && <Alert message={error} onRetry={reload} />}{message && <Alert message={message} />}
     <section className="panel roster-panel"><div className="filters"><input className="input search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('search')} /><select className="input" value={tier} onChange={(event) => setTier(event.target.value)}><option value="">{t('allTiers')}</option>{Object.keys(TIER_SCORES).map((value) => <option key={value}>{value}</option>)}</select><select className="input" value={position} onChange={(event) => setPosition(event.target.value)}><option value="">{t('allPositions')}</option>{REQUIRED_POSITIONS.map((value) => <option key={value}>{value}</option>)}</select><label className="check"><input type="checkbox" checked={onlyPlaying} onChange={(event) => setOnlyPlaying(event.target.checked)} />{t('participatingOnly')}</label></div>
-      <div className="table-wrap"><table><thead><tr><th>{sortLabel(t('name'), 'displayName')}</th><th>{sortLabel(t('inhouseTier'), 'inhouseScore')}</th><th>{sortLabel(t('riotId'), 'riotId')}</th><th>{t('positions')}</th><th>{t('currentSolo')}</th><th>{t('historicalSolo')}</th><th>{t('historicalFlex')}</th><th>{sortLabel(t('today'), 'participating')}</th><th>{sortLabel(t('updated'), 'updatedAt')}</th><th>{t('note')}</th><th>{t('actions')}</th></tr></thead><tbody>{loading ? <tr><td colSpan={11}><Empty text={t('loading')} /></td></tr> : filtered.map((player) => <tr key={player.id} className={!player.active ? 'inactive-row' : ''}><td><strong>{player.displayName}</strong>{!player.active && <small className="block">{t('inactive')}</small>}</td><td><Tier tier={player.inhouseTier} score={player.inhouseScore} /></td><td>{player.riotId}</td><td><div className="tag-row">{player.positions.map((item) => <span className="position-tag" key={item}>{item}</span>)}</div></td><td>{formatRank(player, 'current')}</td><td><RankHistoryCell value={formatRank(player, 'solo')} records={player.historicalRankHistory.solo} label={t('seasonHistory')} onOpen={() => setHistoryModal({ player, queue: 'solo' })} /></td><td><RankHistoryCell value={formatRank(player, 'flex')} records={player.historicalRankHistory.flex} label={t('seasonHistory')} onOpen={() => setHistoryModal({ player, queue: 'flex' })} /></td><td><label className="switch"><input type="checkbox" checked={player.participating} disabled={!player.active || busy === player.id} onChange={(event) => update(player.id, { participating: event.target.checked })} /><span /></label></td><td className="muted-cell">{formatDate(player.riotLastUpdatedAt || player.updatedAt, language)}</td><td className="note-cell">{player.note || '—'}</td><td><div className="row-actions"><button title={t('edit')} onClick={() => open(player)}><Pencil size={15} /></button><button title={t('rankRefresh')} disabled={busy === player.id || !player.active} onClick={() => refreshOne(player.id)}><RefreshCw size={15} className={busy === player.id ? 'spin' : ''} /></button><button title={t('deactivate')} disabled={!player.active} onClick={() => { if (confirm(`${player.displayName} - ${t('deactivate')}?`)) void api.deactivatePlayer(player.id).then(reload); }}><Trash2 size={15} /></button></div></td></tr>)}{!loading && !filtered.length && <tr><td colSpan={11}><Empty text={t('emptyPlayers')} /></td></tr>}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>{sortLabel(t('name'), 'displayName')}</th><th>{sortLabel(t('inhouseTier'), 'inhouseScore')}</th><th>HUH 추정전력</th><th>{sortLabel(t('riotId'), 'riotId')}</th><th>{t('positions')}</th><th>{t('currentSolo')}</th><th>{t('historicalSolo')}</th><th>{t('historicalFlex')}</th><th>{sortLabel(t('today'), 'participating')}</th><th>{sortLabel(t('updated'), 'updatedAt')}</th><th>{t('actions')}</th></tr></thead><tbody>{loading ? <tr><td colSpan={11}><Empty text={t('loading')} /></td></tr> : filtered.map((player) => {
+        const rating = data.ratings[player.id];
+        return <tr key={player.id} className={!player.active ? 'inactive-row' : ''}>
+          <td><strong>{player.displayName}</strong>{!player.active && <small className="block">{t('inactive')}</small>}</td>
+          <td><Tier tier={player.inhouseTier} score={player.inhouseScore} /></td>
+          <td>
+            {rating ? (
+              <button className="power-pill-btn" onClick={() => setAnalysisPlayer(player)}>
+                <strong>{Math.round(rating.overallScore)}점</strong>
+                <span className={`conf-dot ${rating.confidenceLevel.toLowerCase()}`} title={`신뢰도 ${rating.confidenceLevel}`} />
+              </button>
+            ) : (
+              <button className="power-pill-btn unrated" onClick={() => setAnalysisPlayer(player)}>
+                <Sparkles size={12} /> 미분석
+              </button>
+            )}
+          </td>
+          <td>{player.riotId}</td>
+          <td><div className="tag-row">{player.positions.map((item) => <span className="position-tag" key={item}>{item}</span>)}</div></td>
+          <td>{formatRank(player, 'current')}</td>
+          <td><RankHistoryCell value={formatRank(player, 'solo')} records={player.historicalRankHistory.solo} label={t('seasonHistory')} onOpen={() => setHistoryModal({ player, queue: 'solo' })} /></td>
+          <td><RankHistoryCell value={formatRank(player, 'flex')} records={player.historicalRankHistory.flex} label={t('seasonHistory')} onOpen={() => setHistoryModal({ player, queue: 'flex' })} /></td>
+          <td><label className="switch"><input type="checkbox" checked={player.participating} disabled={!player.active || busy === player.id} onChange={(event) => update(player.id, { participating: event.target.checked })} /><span /></label></td>
+          <td className="muted-cell">{formatDate(player.riotLastUpdatedAt || player.updatedAt, language)}</td>
+          <td><div className="row-actions">
+            <button title="전적 분석 및 전력 확인" onClick={() => setAnalysisPlayer(player)}><Sparkles size={15} /></button>
+            <button title={t('edit')} onClick={() => open(player)}><Pencil size={15} /></button>
+            <button title={t('rankRefresh')} disabled={busy === player.id || !player.active} onClick={() => refreshOne(player.id)}><RefreshCw size={15} className={busy === player.id ? 'spin' : ''} /></button>
+            <button title={t('deactivate')} disabled={!player.active} onClick={() => { if (confirm(`${player.displayName} - ${t('deactivate')}?`)) void api.deactivatePlayer(player.id).then(reload); }}><Trash2 size={15} /></button>
+          </div></td>
+        </tr>;
+      })}{!loading && !filtered.length && <tr><td colSpan={11}><Empty text={t('emptyPlayers')} /></td></tr>}</tbody></table></div>
     </section>
     {editing !== undefined && <Modal title={editing ? t('editPlayer') : t('addPlayer')} onClose={() => setEditing(undefined)}><form onSubmit={submit} className="form-grid"><Field label={t('name')}><input className="input" required value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></Field><Field label={t('inhouseTier')}><select className="input" value={form.inhouseTier} onChange={(event) => setForm({ ...form, inhouseTier: event.target.value as InhouseTier })}>{Object.entries(TIER_SCORES).map(([name, score]) => <option key={name} value={name}>{name} · {score}</option>)}</select></Field><Field label={t('riotId')} wide><input className="input" required placeholder="GameName#TagLine" value={form.riotId} onChange={(event) => setForm({ ...form, riotId: event.target.value })} /></Field><Field label={t('positions')} wide><div className="position-choices">{REQUIRED_POSITIONS.map((item) => <label key={item}><input type="checkbox" checked={form.positions.includes(item)} onChange={() => setForm({ ...form, positions: form.positions.includes(item) ? form.positions.filter((value) => value !== item) : [...form.positions, item] })} />{item}</label>)}<button type="button" className="text-button" onClick={() => setForm({ ...form, positions: [...REQUIRED_POSITIONS] })}>ALL</button></div></Field><Field label={t('note')} wide><textarea className="input" rows={3} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} /></Field><label className="check"><input type="checkbox" checked={form.participating} onChange={(event) => setForm({ ...form, participating: event.target.checked })} />{t('participating')}</label>{message && <div className="form-error">{message}</div>}<div className="modal-actions"><button type="button" className="button secondary" onClick={() => setEditing(undefined)}>{t('cancel')}</button><button className="button primary" disabled={busy === 'save'}><Save size={16} />{t('save')}</button></div></form></Modal>}
     {historyModal && <SeasonHistoryModal player={historyModal.player} queue={historyModal.queue} onClose={() => setHistoryModal(null)} />}
+    {analysisPlayer && <PlayerAnalysisModal player={analysisPlayer} onClose={() => setAnalysisPlayer(null)} onPlayerUpdated={reload} />}
   </>;
 }
 
@@ -252,7 +446,24 @@ function PolicyPage({ kind }: { kind: 'privacy' | 'terms' }) {
 
 function AuthenticatedApp() {
   const appData = useAppData();
-  return <Shell userEmail="TEST MODE"><Routes><Route path="/" element={<Dashboard {...appData} />} /><Route path="/players" element={<PlayersPage {...appData} />} /><Route path="/builder" element={<BuilderPage {...appData} />} /><Route path="/history" element={<HistoryPage {...appData} />} /><Route path="/stats" element={<StatsPage {...appData} />} /><Route path="/settings" element={<SettingsPage {...appData} />} /><Route path="/privacy" element={<PolicyPage kind="privacy" />} /><Route path="/terms" element={<PolicyPage kind="terms" />} /><Route path="*" element={<Dashboard {...appData} />} /></Routes></Shell>;
+  return (
+    <Shell userEmail="TEST MODE">
+      <Routes>
+        <Route path="/" element={<Dashboard {...appData} />} />
+        <Route path="/players" element={<PlayersPage {...appData} />} />
+        <Route path="/multi-team" element={<MultiTeamBuilder players={appData.data.players} ratings={appData.data.ratings} onTeamsSaved={() => void appData.reload()} />} />
+        <Route path="/custom-teams" element={<CustomTeamManager players={appData.data.players} ratings={appData.data.ratings} />} />
+        <Route path="/tournament" element={<TournamentPage ratings={appData.data.ratings} />} />
+        <Route path="/builder" element={<BuilderPage {...appData} />} />
+        <Route path="/history" element={<HistoryPage {...appData} />} />
+        <Route path="/stats" element={<StatsPage {...appData} />} />
+        <Route path="/settings" element={<SettingsPage {...appData} />} />
+        <Route path="/privacy" element={<PolicyPage kind="privacy" />} />
+        <Route path="/terms" element={<PolicyPage kind="terms" />} />
+        <Route path="*" element={<Dashboard {...appData} />} />
+      </Routes>
+    </Shell>
+  );
 }
 
 export function App() {

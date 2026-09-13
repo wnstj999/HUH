@@ -121,3 +121,192 @@ export interface HealthStatus {
   tournamentEnabled: boolean;
   timestamp: string;
 }
+
+// -------------------------------------------------------------
+// 신규: 일반 롤 전적(Match-v5) 및 설명 가능한 전력 추정치 모델 타입
+// -------------------------------------------------------------
+export interface PlayerMatchStat {
+  id?: string;
+  puuid: string;
+  matchId: string;
+  queueId: number;
+  queueType: 'SOLO' | 'FLEX' | 'NORMAL';
+  championId: number;
+  championName: string;
+  position: Position | 'UNKNOWN';
+  win: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  goldEarned: number;
+  damageToChampions: number;
+  visionScore: number;
+  gameDuration: number;
+  gameCreationAt: string;
+}
+
+export interface ScoreBreakdown {
+  baseTierScore: number;
+  baseTierDescription: string;
+  peakRankBonus: number;
+  peakRankDescription: string;
+  recentPerformanceModifier: number;
+  recentPerformanceDescription: string;
+  metrics: {
+    sampleGames: number;
+    winRate: number;
+    avgKda: number;
+    avgCsPerMin: number;
+    avgDpm: number;
+    avgGpm: number;
+    avgVisionScore: number;
+  };
+  roleMastery: Record<Position, {
+    games: number;
+    winRate: number;
+    masteryScore: number;
+    experienceLevel: 'MAIN' | 'SECONDARY' | 'OFF_ROLE' | 'UNPLAYED';
+  }>;
+}
+
+export interface PowerRating {
+  id?: string;
+  playerId: string;
+  overallScore: number;
+  confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW';
+  confidenceReason: string;
+  sampleGamesCount: number;
+  evaluatedPeriodDays: number;
+  topScore: number;
+  jugScore: number;
+  midScore: number;
+  adcScore: number;
+  supScore: number;
+  topGames: number;
+  jugGames: number;
+  midGames: number;
+  adcGames: number;
+  supGames: number;
+  breakdown: ScoreBreakdown;
+  modelVersion: string;
+  calculatedAt: string;
+}
+
+export interface PlayerPowerDetail {
+  playerId: string;
+  rating: PowerRating | null;
+  topChampions: Array<{
+    championName: string;
+    games: number;
+    winRate: number;
+    kda: number;
+  }>;
+  positionStats: Array<{
+    position: Position;
+    games: number;
+    winRate: number;
+    score: number | null;
+  }>;
+  totalCachedMatches: number;
+  lastCalculatedAt: string | null;
+}
+
+// -------------------------------------------------------------
+// 신규: 커스텀 팀 (수동 등록 및 밸런스 분석)
+// -------------------------------------------------------------
+export interface CustomTeamMember {
+  id?: string;
+  teamId?: string;
+  playerId?: string | null;
+  player?: Pick<Player, 'id' | 'displayName' | 'inhouseTier' | 'inhouseScore' | 'currentSoloTier' | 'currentSoloDivision' | 'currentSoloLp' | 'puuid'> | null;
+  riotId: string;
+  playerName: string;
+  position: Position;
+  isCaptain?: boolean;
+}
+
+export interface CustomTeam {
+  id: string;
+  name: string;
+  source: 'MANUAL' | 'AUTO_BALANCED';
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  members: CustomTeamMember[];
+}
+
+// -------------------------------------------------------------
+// 신규: 토너먼트 (4강 / 8강 / 16강)
+// -------------------------------------------------------------
+export interface TournamentMatch {
+  id: string;
+  tournamentId: string;
+  roundNumber: number; // 1: 첫라운드, ... final
+  matchIndex: number; // 라운드 내 인덱스
+  team1Id: string | null;
+  team2Id: string | null;
+  team1?: Pick<CustomTeam, 'id' | 'name'> | null;
+  team2?: Pick<CustomTeam, 'id' | 'name'> | null;
+  team1Score: number;
+  team2Score: number;
+  winnerTeamId: string | null;
+  winnerTeam?: Pick<CustomTeam, 'id' | 'name'> | null;
+  status: 'PENDING' | 'READY' | 'IN_PROGRESS' | 'COMPLETED' | 'BYE';
+  nextMatchId: string | null;
+  nextSlot: 'team1' | 'team2' | null;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Tournament {
+  id: string;
+  name: string;
+  bracketSize: 4 | 8 | 16;
+  format: 'BO1' | 'BO3' | 'BO5';
+  seedingType: 'RANDOM' | 'POWER_SEED' | 'MANUAL';
+  status: 'READY' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  winnerTeamId: string | null;
+  winnerTeam?: Pick<CustomTeam, 'id' | 'name'> | null;
+  createdAt: string;
+  updatedAt: string;
+  matches?: TournamentMatch[];
+}
+
+// -------------------------------------------------------------
+// 신규: 다팀 자동 편성 및 제약 조건 타입
+// -------------------------------------------------------------
+export interface TeamConstraints {
+  pinnedPositions: Record<string, Position>; // playerId -> Position
+  pinnedTeams: Record<string, number>; // playerId -> teamIndex (0-based)
+  pairedPlayers: Array<[string, string]>; // 같은 팀 희망 [id1, id2]
+  isolatedPlayers: Array<[string, string]>; // 다른 팀 배정 [id1, id2]
+}
+
+export interface MultiTeamAssignment {
+  teamIndex: number;
+  teamName: string;
+  position: Position;
+  player: Player;
+  ratingScore: number;
+  isMainPosition: boolean;
+}
+
+export interface MultiTeamPlan {
+  name: string; // e.g. '전체 전력 균형 우선', '포지션 숙련도 우선', '맞라이너 격차 최소화'
+  description: string;
+  teams: Array<{
+    teamIndex: number;
+    teamName: string;
+    totalScore: number;
+    averageScore: number;
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+    offRoleCount: number;
+    assignments: MultiTeamAssignment[];
+  }>;
+  scoreStdDev: number; // 팀 간 점수 표준편차 / 차이
+  maxLaneDiff: number; // 라인별 최대 전력차
+  totalOffRoleCount: number; // 전체 비숙련 포지션 수
+}
+

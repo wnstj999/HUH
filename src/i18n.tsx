@@ -5,6 +5,7 @@ import type { Language } from './types';
 const messages = {
   ko: {
     dashboard: '대시보드', players: '플레이어', builder: '내전 생성', history: '내전 전적', stats: '개인 통계', settings: '설정', privacy: '개인정보 처리방침', terms: '이용약관',
+    multiTeam: '팀 편성 (다팀)', customTeams: '팀 관리 및 비교', tournament: '토너먼트 대진표',
     registered: '등록 인원', participating: '오늘 참가', matches: '내전 수', apiStatus: 'Riot API', recentMatches: '최근 경기', refresh: '새로고침', loading: '불러오는 중…', noData: '데이터 없음',
     addPlayer: '플레이어 추가', editPlayer: '플레이어 수정', name: '이름', inhouseTier: '내전 티어', riotId: 'Riot ID', score: '점수', positions: '포지션', currentSolo: '현재 솔랭', historicalSolo: '솔랭 최고', historicalFlex: '자랭 최고', seasonHistory: '시즌별 기록', finalRank: '최종 기록', peakRank: '최고 기록', soloQueue: '솔로랭크', flexQueue: '자유랭크', today: '오늘 참가', updated: '최근 갱신', note: '비고', actions: '관리', save: '저장', cancel: '취소', deactivate: '비활성화', edit: '수정', rankRefresh: 'Riot 데이터 갱신', refreshAll: '전체 새로고침', search: '이름 또는 Riot ID 검색', allTiers: '전체 티어', allPositions: '전체 포지션', participatingOnly: '참가자만 보기', inactive: '비활성', active: '활성',
     selectTen: '오늘 참가자 중 정확히 10명을 선택하세요.', selected: '선택', autoBuild: '자동 팀 생성', saveMatch: '경기 저장', manualHint: '자동 편성 후 각 슬롯의 선수를 바꿔 수동 조정할 수 있습니다.', blue: 'BLUE', red: 'RED', total: '총점', difference: '점수 차이', eventName: '내전 이름', eventPlaceholder: '9월 정기 내전', positionError: '포지션 구성을 만들 수 없습니다.',
@@ -18,6 +19,7 @@ const messages = {
   },
   en: {
     dashboard: 'Dashboard', players: 'Players', builder: 'Match Builder', history: 'Match History', stats: 'Player Stats', settings: 'Settings', privacy: 'Privacy Policy', terms: 'Terms of Service',
+    multiTeam: 'Multi-Team Builder', customTeams: 'Custom Teams', tournament: 'Tournament Bracket',
     registered: 'Registered', participating: 'Playing Today', matches: 'Matches', apiStatus: 'Riot API', recentMatches: 'Recent Matches', refresh: 'Refresh', loading: 'Loading…', noData: 'No data',
     addPlayer: 'Add Player', editPlayer: 'Edit Player', name: 'Name', inhouseTier: 'Inhouse Tier', riotId: 'Riot ID', score: 'Score', positions: 'Positions', currentSolo: 'Current Solo', historicalSolo: 'Solo Peak', historicalFlex: 'Flex Peak', seasonHistory: 'Season history', finalRank: 'Final rank', peakRank: 'Peak rank', soloQueue: 'Solo/Duo', flexQueue: 'Ranked Flex', today: 'Playing Today', updated: 'Last Updated', note: 'Note', actions: 'Actions', save: 'Save', cancel: 'Cancel', deactivate: 'Deactivate', edit: 'Edit', rankRefresh: 'Refresh Riot Data', refreshAll: 'Refresh All', search: 'Search name or Riot ID', allTiers: 'All tiers', allPositions: 'All positions', participatingOnly: 'Playing only', inactive: 'Inactive', active: 'Active',
     selectTen: 'Select exactly 10 players who are playing today.', selected: 'Selected', autoBuild: 'Build Balanced Teams', saveMatch: 'Save Match', manualHint: 'After auto-building, swap players between slots for manual adjustment.', blue: 'BLUE', red: 'RED', total: 'Total', difference: 'Score difference', eventName: 'Event name', eventPlaceholder: 'September Inhouse', positionError: 'No valid position assignment exists.',
