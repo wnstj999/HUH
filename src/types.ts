@@ -194,6 +194,7 @@ export interface PowerRating {
 }
 
 export interface PlayerPowerDetail {
+  recentMatches?: Array<{ matchId: string; playedAt: string; queueId: number; championName: string; position: string; win: boolean; kills: number; deaths: number; assists: number }>;
   playerId: string;
   rating: PowerRating | null;
   topChampions: Array<{

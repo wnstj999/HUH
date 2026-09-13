@@ -215,6 +215,11 @@ export function PlayerAnalysisModal({ player, onClose, onPlayerUpdated }: Props)
               </div>
             </div>
 
+            <div className="panel">
+              <h3>최근 저장된 경기 10판</h3>
+              <p className="helper">캐시된 경기 목록입니다. 선택한 분석 범위의 경기 수와 다를 수 있습니다.</p>
+              {detail?.recentMatches?.length ? <div className="table-wrap"><table><thead><tr><th>날짜</th><th>큐</th><th>챔피언</th><th>포지션</th><th>결과</th><th>K / D / A</th></tr></thead><tbody>{detail.recentMatches.map((m) => <tr key={m.matchId}><td>{new Date(m.playedAt).toLocaleDateString('ko-KR')}</td><td>{m.queueId === 420 ? '솔랭' : m.queueId === 440 ? '자랭' : '기타'}</td><td>{m.championName}</td><td>{m.position}</td><td>{m.win ? '승리' : '패배'}</td><td>{m.kills} / {m.deaths} / {m.assists}</td></tr>)}</tbody></table></div> : <p className="helper">저장된 경기가 없습니다. 위에서 전적을 수집해 주세요.</p>}
+            </div>
             {/* 모스트 챔피언 TOP 5 */}
             <div className="panel champions-panel">
               <h3>주력 챔피언 (최근 전적 기반)</h3>

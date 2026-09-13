@@ -32,6 +32,9 @@ export default handler(async (req, res) => {
       deaths?: number;
       assists?: number;
       position?: string;
+      match_id?: string;
+      game_creation_at?: string;
+      queue_id?: number;
     }
 
     let matchStats: StoredMatchRow[] = [];
@@ -88,6 +91,7 @@ export default handler(async (req, res) => {
       topChampions,
       positionStats,
       totalCachedMatches: matchStats.length,
+      recentMatches: matchStats.slice(0, 10).map((m) => ({ matchId: m.match_id, playedAt: m.game_creation_at, queueId: m.queue_id, championName: m.champion_name, position: m.position, win: m.win, kills: m.kills, deaths: m.deaths, assists: m.assists })),
       lastCalculatedAt: ratingRow?.calculated_at ?? null,
     });
     return;

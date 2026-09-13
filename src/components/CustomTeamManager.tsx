@@ -4,13 +4,16 @@ import type { CustomTeam, Player, Position, PowerRating } from '../types';
 import { POSITIONS } from '../lib/multiTeamBalancer';
 import { compareTwoTeams, evaluateTeamPower, parseMultiLineRiotIds, suggestTrades, type TradeSuggestion } from '../lib/teamAnalysis';
 import { api } from '../lib/api';
+import { MatchupWorkbench } from './MatchupWorkbench';
 
 interface Props {
   players: Player[];
   ratings?: Record<string, PowerRating>;
 }
 
-export function CustomTeamManager({ players, ratings = {} }: Props) {
+export function CustomTeamManager({ players, ratings: initialRatings = {} }: Props) {
+  const [refreshedRatings, setRefreshedRatings] = useState<Record<string, PowerRating>>({});
+  const ratings = useMemo(() => ({ ...initialRatings, ...refreshedRatings }), [initialRatings, refreshedRatings]);
   const [teams, setTeams] = useState<CustomTeam[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -195,7 +198,7 @@ export function CustomTeamManager({ players, ratings = {} }: Props) {
       await api.updateCustomTeam(team1.id, { members: updatedT1Members });
       await api.updateCustomTeam(team2.id, { members: updatedT2Members });
 
-      setMessage(`선수 트레이드가 적용되어 팀 전력 격차가 ${suggestion.currentDifference}점에서 ${suggestion.improvedDifference}점으로 개선되었습니다!`);
+      setMessage(`선수 교환이 적용되었습니다. 추정 전력 격차: ${suggestion.currentDifference}점 → ${suggestion.improvedDifference}점.`);
       await loadTeams();
     } catch (err) {
       setError(err instanceof Error ? err.message : '트레이드 적용 실패');
@@ -387,6 +390,7 @@ export function CustomTeamManager({ players, ratings = {} }: Props) {
 
           {comparison ? (
             <div className="comparison-body">
+              {team1 && team2 && <MatchupWorkbench key={`${team1.id}:${team2.id}`} left={team1} right={team2} players={players} ratings={ratings} onRatingsUpdated={setRefreshedRatings} onApply={handleApplyTrade} />}
               {/* 상단 팀 총점 요약 비교 */}
               <div className="vs-hero-bar">
                 <div className="team-bar-box blue-side">

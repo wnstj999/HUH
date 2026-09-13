@@ -1091,4 +1091,11 @@ td:first-child, th:first-child { padding-left: 5px; }
 }
 .pick-team-card .team-text strong { display: block; font-size: 0.78rem; }
 .pick-team-card .team-text small { color: var(--muted); font-size: 0.65rem; }
+.matchup-workbench { padding: 20px; margin-bottom: 24px; border: 1px solid var(--teal); border-radius: 14px; background: rgba(86,224,189,.035); }
+.matchup-position-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.matchup-player-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin-bottom: 24px; }
+.matchup-player-card { display: grid; gap: 9px; padding: 18px; border: 1px solid #293646; border-radius: 12px; overflow-wrap: anywhere; }
+.matchup-player-card small { color: var(--muted); }
+.matchup-player-card .text-button { justify-self: start; text-align: left; }
+@media (max-width: 650px) { .matchup-player-grid { grid-template-columns: 1fr; } .matchup-workbench { padding: 12px; } }
 
