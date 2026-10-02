@@ -9,6 +9,7 @@ export interface RiotMatchParticipant {
   summonerName?: string;
   riotIdGameName?: string;
   riotIdTagline?: string;
+  teamId?: number;
   championId: number;
   championName: string;
   teamPosition: string; // 'TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY', ''
@@ -31,6 +32,9 @@ export interface RiotMatchDetail {
     participants: string[];
   };
   info: {
+    tournamentCode?: string;
+    mapId?: number;
+    gameStartTimestamp?: number;
     gameCreation: number;
     gameDuration: number;
     gameMode: string;
@@ -43,18 +47,18 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function riotFetch<T>(url: string, key: string, retryCount = 0): Promise<T> {
+async function riotFetch<T>(url: string, key: string, retryCount = 0, allowRetry = true): Promise<T> {
   const response = await fetch(url, {
     headers: { 'X-Riot-Token': key, Accept: 'application/json' },
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(allowRetry ? 15_000 : 8000),
   });
 
-  if (response.status === 429 && retryCount < 2) {
+  if (response.status === 429 && allowRetry && retryCount < 2) {
     const retryAfterSeconds = Number(response.headers.get('Retry-After') || '2');
     if (!Number.isFinite(retryAfterSeconds) || retryAfterSeconds > 5) throw new HttpError(429, 'RIOT_RATE_LIMIT', 'Riot 요청 제한 대기 시간이 깁니다. 잠시 후 다시 시도하세요.');
     const waitMs = Math.max(retryAfterSeconds * 1000, 1500);
     await sleep(waitMs);
-    return riotFetch<T>(url, key, retryCount + 1);
+    return riotFetch<T>(url, key, retryCount + 1, allowRetry);
   }
 
   if (!response.ok) {
@@ -109,14 +113,13 @@ export async function getMatchIds(
   );
 }
 
-export async function getMatchDetail(matchId: string, key: string): Promise<RiotMatchDetail> {
+export async function getMatchDetail(matchId: string, key: string, allowRetry = true): Promise<RiotMatchDetail> {
   return riotFetch<RiotMatchDetail>(
     `https://asia.api.riotgames.com/lol/match/v5/matches/${encodeURIComponent(matchId)}`,
-    key,
+    key, 0, allowRetry,
   );
 }
 
 export async function testRiotConnection(key: string): Promise<void> {
   await riotFetch('https://kr.api.riotgames.com/lol/status/v4/platform-data', key);
 }
-

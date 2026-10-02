@@ -47,6 +47,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  tournamentSession: (matchId: string) => request<{ session: {code:string|null;state:string;riotMatchId:string|null;lastErrorCode:string|null}|null }>('/api/tournament-session?matchId=' + encodeURIComponent(matchId)),
+  prepareTournament: (matchId:string, input:{action?:string;consentConfirmed?:boolean}) => request('/api/tournament-session',{method:'POST',body:JSON.stringify({matchId,...input})}),
   health: () => request<HealthStatus>('/api/health'),
   players: () => request<{ players: Player[] }>('/api/players').then((result) => result.players),
   createPlayer: (input: PlayerInput) => request<{ player: Player }>('/api/players', { method: 'POST', body: JSON.stringify(input) }).then((result) => result.player),

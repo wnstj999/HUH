@@ -1,3 +1,4 @@
+import { requireManualMatch } from '../server/tournament/manual-guard.js';
 import { parseMatchPatch } from '../server/lib/match-input.js';
 import { assertDb, db } from '../server/lib/db.js';
 import { bodyAsObject, handler, HttpError, requireMethod } from '../server/lib/http.js';
@@ -11,6 +12,7 @@ export default handler(async (req, res) => {
   // 1. 단일 경기 ID가 지정된 경우 ([id].ts 로직)
   if (id) {
     requireMethod(req, ['PATCH']);
+    await requireManualMatch(id);
     const body = bodyAsObject(req);
     const patch = parseMatchPatch(body);
     const client = db();

@@ -1,3 +1,5 @@
+import { ApplicationPreview } from './components/ApplicationPreview';
+import { TournamentCollection } from './components/TournamentCollection';
 import { OperationsHome } from './components/OperationsHome';
 import { OperatorLogin } from './components/OperatorLogin';
 import { authClient, getAuthSession, signOut } from './lib/auth';
@@ -299,7 +301,7 @@ function HistoryPage({ data, reload }: ReturnType<typeof useAppData>) {
 
 function MatchRows({ match, number, language, expanded, toggle, update, reload }: { match: InhouseMatch; number: number; language: string; expanded: boolean; toggle: () => void; update: (match: InhouseMatch, patch: Parameters<typeof api.updateMatch>[1]) => Promise<void>; reload: () => Promise<void> }) {
   const { t } = useI18n(); const names = (team: 'BLUE' | 'RED') => match.participants.filter((participant) => participant.team === team).map((participant) => participant.player?.displayName).join(', ');
-  return <><tr><td><strong>#{number}</strong><small className="block">{match.event?.name}</small></td><td>{formatDate(match.createdAt, language)}</td><td className={match.winnerTeam === 'BLUE' ? 'winner-cell' : ''}>{names('BLUE')}</td><td className={match.winnerTeam === 'RED' ? 'winner-cell' : ''}>{names('RED')}</td><td><select className="compact-select" value={match.winnerTeam ?? ''} onChange={(event) => update(match, { winnerTeam: (event.target.value || null) as InhouseMatch['winnerTeam'] })}><option value="">—</option><option>BLUE</option><option>RED</option></select></td><td><MatchTimeEditor match={match} update={update} /></td><td><select className="compact-select" value={match.status} onChange={(event) => update(match, { status: event.target.value as InhouseMatch['status'] })}><option value="READY">{t('ready')}</option><option value="IN_PROGRESS">{t('inProgress')}</option><option value="COMPLETED">{t('completed')}</option><option value="CANCELLED">{t('cancelled')}</option></select></td><td><span className="waiting-label"><StatusDot ok={false} waiting />{t('tournamentWaiting')}</span></td><td><button className="row-expand" onClick={toggle}><ChevronDown className={expanded ? 'up' : ''} /></button></td></tr>{expanded && <tr className="detail-row"><td colSpan={9}><div className="participant-editor"><p className="helper">완료한 경기의 승리팀·시간·개인 지표를 입력하세요. 지표가 모두 입력된 최근 내전은 전력 편성에 반영됩니다. 미입력 값은 0으로 취급하지 않습니다.</p>{match.participants.map((participant) => <ParticipantEditor key={participant.id} participant={participant} reload={reload} />)}</div></td></tr>}</>;
+  return <><tr><td><strong>#{number}</strong><small className="block">{match.event?.name}</small></td><td>{formatDate(match.createdAt, language)}</td><td className={match.winnerTeam === 'BLUE' ? 'winner-cell' : ''}>{names('BLUE')}</td><td className={match.winnerTeam === 'RED' ? 'winner-cell' : ''}>{names('RED')}</td><td><select className="compact-select" value={match.winnerTeam ?? ''} onChange={(event) => update(match, { winnerTeam: (event.target.value || null) as InhouseMatch['winnerTeam'] })}><option value="">—</option><option>BLUE</option><option>RED</option></select></td><td><MatchTimeEditor match={match} update={update} /></td><td><select className="compact-select" value={match.status} onChange={(event) => update(match, { status: event.target.value as InhouseMatch['status'] })}><option value="READY">{t('ready')}</option><option value="IN_PROGRESS">{t('inProgress')}</option><option value="COMPLETED">{t('completed')}</option><option value="CANCELLED">{t('cancelled')}</option></select></td><td><span className="waiting-label"><StatusDot ok={match.status === 'COMPLETED' && Boolean(match.riotGameId)} waiting />{match.riotGameId ? '자동 결과 저장' : match.tournamentCode ? '종료 대기' : t('tournamentWaiting')}</span></td><td><button className="row-expand" onClick={toggle}><ChevronDown className={expanded ? 'up' : ''} /></button></td></tr>{expanded && <tr className="detail-row"><td colSpan={9}><div className="participant-editor"><TournamentCollection matchId={match.id} onCollected={reload} /><p className="helper">완료한 경기의 승리팀·시간·개인 지표를 입력하세요. 지표가 모두 입력된 최근 내전은 전력 편성에 반영됩니다. 미입력 값은 0으로 취급하지 않습니다.</p>{match.participants.map((participant) => <ParticipantEditor key={participant.id} participant={participant} reload={reload} />)}</div></td></tr>}</>;
 }
 
 function MatchTimeEditor({ match, update }: { match: InhouseMatch; update: (match: InhouseMatch, patch: Parameters<typeof api.updateMatch>[1]) => Promise<void> }) {
@@ -365,12 +367,14 @@ function PolicyPage({ kind }: { kind: 'privacy' | 'terms' }) {
     ['2. 처리하는 정보', 'Riot ID, PUUID, Riot API의 현재 랭크 데이터, OP.GG 공개 프로필의 과거 솔로·자유랭크 기록, 내전 참가·팀·경기·개인 기록과 운영자 로그인 이메일을 처리합니다. Riot API Key는 서버에서 암호화한 뒤 DB에 저장하며 브라우저에 원문을 반환하지 않습니다.'],
     ['3. 이용 목적', '참가자 식별, 5v5 팀 편성, 현재·과거 랭크 확인, 내전 전적 및 통계 제공에만 사용합니다.'],
     ['4. 외부 처리', '현재 랭크 조회 시 Riot Games API로 Riot ID 또는 PUUID가 전달되고, 과거 기록 조회 시 OP.GG 공개 프로필을 서버에서 요청합니다. 운영 데이터는 Supabase에 저장됩니다.'],
+    ['내전 기록 동의', 'LoL 내전 기록의 수집·멤버 간 공유에는 참가자별 명시적 동의가 필요합니다. 운영자는 코드 발급 전에 10명 모두의 동의를 확인하고 서버는 운영자의 확인 시각과 참가자 명단을 기록합니다. 이는 Riot 계정 본인 인증이나 동의의 자동 검증을 의미하지 않습니다.'],
     ['5. 보관과 삭제', '운영에 필요한 기간 동안 보관하며, 커뮤니티 운영자는 플레이어를 비활성화하거나 관련 기록을 정정할 수 있습니다. 법적 의무가 없는 한 참가자는 운영자에게 삭제를 요청할 수 있습니다.'],
   ] : [
     ['1. Scope', 'HUH processes participant-provided information to operate a private League of Legends inhouse community.'],
     ['2. Information processed', 'We process Riot IDs, PUUIDs, current rank data from Riot APIs, historical solo and flex records from public OP.GG profiles, participation, team, match and player statistics, and operator login email addresses. Riot API Keys are encrypted by the server before database storage and plaintext is never returned to the browser.'],
     ['3. Purpose', 'Information is used only for participant identification, balanced 5v5 team creation, rank display, match records, and player statistics.'],
     ['4. Service providers', 'Riot ID or PUUID is sent to Riot Games APIs for current ranks. The backend requests public OP.GG profiles for historical records. Operational records are stored in Supabase.'],
+    ['Custom-match consent', 'Each participant must specifically consent to LoL custom-match collection and sharing. Before code generation, organizers attest that all ten participants consented. The server records the attestation time and roster; it does not automatically verify identity or consent.'],
     ['5. Retention and removal', 'Records are retained while needed to operate the community. Organizers can deactivate players or correct records, and participants may request removal where no legal obligation requires retention.'],
   ];
   const terms = language === 'ko' ? [
@@ -424,6 +428,7 @@ export function App() {
     return () => { active = false; subscription?.data.subscription.unsubscribe(); };
   }, []);
   return <Routes>
+    <Route path="/review" element={<ApplicationPreview />} />
     <Route path="/privacy" element={<Shell><PolicyPage kind="privacy" /></Shell>} />
     <Route path="/terms" element={<Shell><PolicyPage kind="terms" /></Shell>} />
     <Route path="*" element={checking ? <div className="auth-loading" role="status">접속 확인 중…</div> : session ? <AuthenticatedApp session={session} /> : <OperatorLogin initialError={authError} />} />

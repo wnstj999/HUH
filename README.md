@@ -49,9 +49,13 @@ npm start
 
 현재 구현 범위는 참가자·내전 결과의 중앙 저장, 내전 전력 조회, 포지션별 팀 편성, 일반 Riot 전적 조회 경로입니다. 로그인 전에는 서비스 소개와 개인정보 처리방침·이용약관을 확인할 수 있습니다.
 
-**Tournament Provider/Code 생성과 결과 콜백 수집은 아직 구현되지 않았습니다.** Production Key를 넣거나 플래그를 켜는 것만으로 일반 내전 자동 수집이 시작되지는 않습니다. 브래킷 관리 기능은 Riot Tournament API 권한과 별개입니다.
+**자동 수집 서버 경로와 심사용 프로토타입을 구현했습니다. 실제 Riot 경기로 검증하거나 운영 배포한 상태는 아닙니다.** 로그인 전 `자동 수집 흐름 체험`에서 `/review`의 5단계 예시를 따라볼 수 있습니다. 예시는 실제 Riot 호출이나 DB 저장을 하지 않습니다. 신청 설명과 공개 전 확인 사항은 [신청 안내](docs/RIOT_APPLICATION.md)에 있습니다.
 
-[Riot FAQ](https://developer.riotgames.com/docs/faqs)는 소스 저장소 링크만으로 신청을 받지 않으며 작동하는 사이트·앱이나 사용자 흐름을 보여주는 자료를 요구합니다. 공개 URL과 심사용 계정 또는 로그인 이후 흐름의 녹화 자료를 준비하고, 실제 DB 저장을 확인한 뒤 신청하세요. 로컬 주소는 외부 심사자가 접속할 수 없습니다. [Portal 정책](https://developer.riotgames.com/docs/portal)상 Personal Key는 Tournament API를 사용할 수 없습니다. [LoL 정책](https://developer.riotgames.com/docs/lol)의 사용자 설정 경기 기록 공유 동의 조건도 자동 수집 도입 전에 확인해야 합니다.
+운영 환경에서는 내전을 저장하고 전적 상세에서 참가자 10명의 LoL 내전 기록 공유 동의를 확인한 뒤 Tournament 코드를 발급합니다. 참가자의 PUUID가 먼저 연결되어 있어야 합니다. 발급 코드로 생성한 로비의 종료 알림만 처리하며 일반 사용자 설정 게임을 자동 검색하지 않습니다. 종료 알림의 검증 정보·코드·경기 ID·10명 참가자·팀을 확인하고 결과를 한 트랜잭션으로 저장합니다. 재전송은 중복 저장하지 않습니다. 실패하면 Riot 종료 알림 재전송 또는 운영자 `결과 다시 수집`을 사용합니다. 발급 응답이 불확실하면 중복 발급하지 않고 운영자 복구가 필요합니다. 자동 수집 예약 이후 수동 수정은 차단합니다.
+
+서버는 승인된 키와 KR Tournament Provider ID가 준비된 경우에만 발급합니다. 운영 담당자가 결과 수신 주소의 도메인·인증서 지원 여부와 Match-v5 응답의 코드/시각/팀 필드를 실제로 확인한 뒤 활성화해야 합니다. 키만 넣거나 플래그만 켜서 운영 시작을 선언하지 않습니다. 통계 포지션은 사전에 확정한 내전 포지션이며 Riot가 추정한 포지션으로 조용히 바꾸지 않습니다.
+
+[Riot FAQ](https://developer.riotgames.com/docs/faqs)는 소스 저장소 링크만으로 신청을 받지 않으며 작동하는 사이트·앱이나 사용자 흐름을 보여주는 자료를 요구합니다. 공개 URL과 심사용 계정 또는 로그인 이후 흐름의 녹화 자료를 준비하고, 프로토타입 또는 운영 흐름의 검증 범위를 정확히 설명해 신청하세요. [LoL 신청 안내](https://developer.riotgames.com/docs/lol#use-cases-for-production-keys)는 검토 가능한 프로토타입·목업도 인정합니다. 로컬 주소는 외부 심사자가 접속할 수 없습니다. [Portal 정책](https://developer.riotgames.com/docs/portal)상 Personal Key는 Tournament API를 사용할 수 없습니다. [LoL 정책](https://developer.riotgames.com/docs/lol)의 사용자 설정 경기 기록 공유 동의 조건도 자동 수집 도입 전에 확인해야 합니다.
 
 ## 운영 연결 상태
 
@@ -77,7 +81,7 @@ GitHub Pages / React → Vercel Functions → Supabase PostgreSQL / Auth
 운영 반영 순서:
 
 1. 기존 Supabase 프로젝트 상태와 서버의 프로젝트 URL·서버 키가 일치하는지 확인합니다. 기존 데이터와 적용된 migration 이력을 먼저 점검합니다.
-2. 미적용 migration만 순서대로 적용합니다. 이번 변경의 `005_atomic_match_results.sql`, `006_atomic_custom_teams.sql`은 기존 행을 삭제하지 않고 저장 함수를 추가합니다. 005/006을 서버 코드보다 먼저 적용합니다.
+2. 미적용 migration만 순서대로 적용합니다. 이번 변경의 `005_atomic_match_results.sql`, `006_atomic_custom_teams.sql`은 기존 행을 삭제하지 않고 저장 함수를 추가합니다. 005/006/007을 서버 코드보다 먼저 적용합니다. `007_tournament_collection.sql`은 자동 수집 예약·검증·중복 저장 방지와 수동 수정 충돌 차단을 추가합니다.
 3. 기존 운영자 계정과 공개 회원가입 비활성화를 확인합니다. 데이터 API는 Bearer 세션을 서버에서 검증합니다. `HUH_DISABLE_AUTH` 우회는 지원하지 않습니다. 전환용 `HUH_ADMIN_TOKEN` 처리는 기존 인증 계약에 따라 유지합니다.
 4. Vercel에 서버 코드를 배포하고 인증된 참가자·경기·팀 저장을 확인합니다. 서버 기능이 준비되지 않았으면 임시 로컬 저장으로 성공 처리하지 않습니다.
 5. 기존 GitHub Actions 프론트 환경변수로 Pages를 배포하고 별도 브라우저 로그인에서 동일한 DB 기록을 확인합니다.
@@ -96,7 +100,7 @@ npm run test:database
 npm run build
 ```
 
-`test:database`는 운영 DB에 접속하지 않고 PGlite의 격리 PostgreSQL에서 migration과 결과·팀 저장 실패 시 롤백, 승리팀 취소, 실행 권한을 확인합니다. 테스트 환경은 기본 UUID 함수를 사용하므로 pgcrypto 확장 생성 구문만 건너뜁니다. 실제 Supabase 배포·인증·기존 데이터 검증을 대신하지 않습니다.
+`test:database`는 운영 DB에 접속하지 않고 PGlite의 격리 PostgreSQL에서 migration 7개와 자동 결과·팀 저장 실패 시 롤백, 승리팀 취소, 실행 권한을 확인합니다. 테스트 환경은 기본 UUID 함수를 사용하므로 pgcrypto 확장 생성 구문만 건너뜁니다. 실제 Supabase 배포·인증·기존 데이터 검증을 대신하지 않습니다.
 
 브라우저 QA의 가상 선수와 가상 로그인은 검증 요청을 가로채는 격리 테스트에만 사용하며 사이트나 운영 DB에 삽입하지 않습니다. 실제 OP.GG 테스트는 `OPGG_LIVE_TEST=true`일 때만 실행합니다.
 
