@@ -5,7 +5,7 @@
 export interface PlayerMatchRecord {
   matchId: string;
   queueId: number;
-  queueType: 'SOLO' | 'FLEX' | 'NORMAL';
+  queueType: 'SOLO' | 'FLEX' | 'NORMAL' | 'INHOUSE';
   championId: number;
   championName: string;
   position: 'TOP' | 'JUG' | 'MID' | 'ADC' | 'SUP' | 'UNKNOWN';
@@ -128,15 +128,19 @@ export function calculatePowerRating(
   rankInfo: PlayerRankInfo,
   matches: PlayerMatchRecord[],
   now: number = Date.now(),
+  source: 'RANKED' | 'INHOUSE' = 'RANKED',
 ): EvaluatedPowerRating {
-  const modelVersion = 'huh-v1.1';
+  const modelVersion = source === 'INHOUSE' ? 'huh-inhouse-v1.1' : 'huh-v1.1';
 
   // 1. 기본 티어 점수 산출
   let baseScore = 1500;
   let baseDesc = '';
 
-  const soloTier = rankInfo.currentSoloTier?.toUpperCase();
-  if (soloTier && TIER_BASE_POINTS[soloTier]) {
+  const soloTier = source === 'RANKED' ? rankInfo.currentSoloTier?.toUpperCase() : null;
+  if (source === 'INHOUSE') {
+    baseScore = 1000 + (rankInfo.inhouseScore - 4) * 100;
+    baseDesc = `내전 운영 등급 ${rankInfo.inhouseTier} 기준 초기값 (${baseScore}점)`;
+  } else if (soloTier && TIER_BASE_POINTS[soloTier]) {
     const apex = ['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(soloTier);
     const div = apex ? 0 : rankInfo.currentSoloDivision ? DIVISION_POINTS[rankInfo.currentSoloDivision] ?? 0 : 0;
     const lp = Number.isFinite(rankInfo.currentSoloLp) ? Math.min(Math.max(rankInfo.currentSoloLp ?? 0, 0), apex ? 3000 : 100) : 0;
@@ -158,7 +162,7 @@ export function calculatePowerRating(
   // 2. 과거 최고 티어 보정 (오래된 기록일수록 감쇄)
   let peakBonus = 0;
   let peakDesc = '과거 최고 기록 추가 반영 없음';
-  if (rankInfo.historicalSoloTier) {
+  if (source === 'RANKED' && rankInfo.historicalSoloTier) {
     const historicalTier = rankInfo.historicalSoloTier.toUpperCase();
     const historicalPoints = TIER_BASE_POINTS[historicalTier] ?? 0;
     if (historicalPoints > baseScore) {
@@ -179,7 +183,7 @@ export function calculatePowerRating(
   const validMatches = matches.filter((m) => {
     const date = Date.parse(m.gameCreationAt);
     if (!m.matchId || seen.has(m.matchId) || !Number.isFinite(date) || date > now || now - date > 180 * 86400000) return false;
-    if (![420, 440].includes(m.queueId) || !Number.isFinite(m.gameDuration) || m.gameDuration < 480) return false;
+    if ((source === 'INHOUSE' ? m.queueType !== 'INHOUSE' || m.queueId !== 0 : ![420, 440].includes(m.queueId)) || !Number.isFinite(m.gameDuration) || m.gameDuration < 480) return false;
     if (![m.kills, m.deaths, m.assists, m.cs, m.goldEarned, m.damageToChampions, m.visionScore].every((value) => Number.isFinite(value) && value >= 0)) return false;
     seen.add(m.matchId);
     return true;
@@ -287,21 +291,21 @@ export function calculatePowerRating(
   let confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
   const reasons: string[] = [];
 
-  if (effectiveGames >= 40 && soloTier && TIER_BASE_POINTS[soloTier]) {
+  if (effectiveGames >= 40 && (source === 'INHOUSE' || soloTier && TIER_BASE_POINTS[soloTier])) {
     confidenceLevel = 'HIGH';
-    reasons.push(`최근 ${sampleCount}전 및 솔로랭크 티어 확보`);
+    reasons.push(source === 'INHOUSE' ? `최근 내전 ${sampleCount}전 확보` : `최근 ${sampleCount}전 및 솔로랭크 티어 확보`);
   } else if (effectiveGames >= 5) {
     confidenceLevel = 'MEDIUM';
-    if (!soloTier) reasons.push('현재 솔로랭크 정보 없음');
+    if (source === 'RANKED' && !soloTier) reasons.push('현재 솔로랭크 정보 없음');
     reasons.push(`최근 경기 수 ${sampleCount}건`);
   } else {
     confidenceLevel = 'LOW';
     if (sampleCount === 0) {
-      reasons.push('수집된 일반/랭크 전적 데이터 없음');
+      reasons.push(source === 'INHOUSE' ? '지표와 시간이 모두 입력된 최근 내전 기록 없음' : '수집된 일반/랭크 전적 데이터 없음');
     } else {
       reasons.push(`최근 경기 표본 부족 (${sampleCount}건)`);
     }
-    if (!soloTier) reasons.push('공식 랭크 데이터 없음');
+    if (source === 'RANKED' && !soloTier) reasons.push('공식 랭크 데이터 없음');
   }
 
   const breakdown: ScoreBreakdown = {

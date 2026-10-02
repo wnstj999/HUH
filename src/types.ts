@@ -114,6 +114,8 @@ export interface BalancedTeams {
 
 export interface HealthStatus {
   status: 'ok' | 'degraded';
+  databaseIssue?: 'NOT_CONFIGURED' | 'SCHEMA_MISSING' | 'CONNECTION_FAILED' | null;
+  storageCapabilities?: { customTeams: boolean; tournaments: boolean };
   backend: boolean;
   database: boolean;
   riotConfigured: boolean;
@@ -194,6 +196,8 @@ export interface PowerRating {
 }
 
 export interface PlayerPowerDetail {
+  source?: 'INHOUSE' | 'RANKED';
+  inhouseTotalGames?: number;
   recentMatches?: Array<{ matchId: string; playedAt: string; queueId: number; championName: string; position: string; win: boolean; kills: number; deaths: number; assists: number }>;
   playerId: string;
   rating: PowerRating | null;
@@ -311,4 +315,3 @@ export interface MultiTeamPlan {
   maxLaneDiff: number; // 라인별 최대 전력차
   totalOffRoleCount: number; // 전체 비숙련 포지션 수
 }
-

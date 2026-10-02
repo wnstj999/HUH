@@ -67,7 +67,7 @@ export function PlayerAnalysisModal({ player, onClose, onPlayerUpdated }: Props)
         <div className="modal-head">
           <div>
             <h2>{player.displayName} <small>({player.riotId})</small></h2>
-            <p className="kicker">일반 전적 기반 설명 가능한 HUH 전력 추정치</p>
+            <p className="kicker">DB에 저장된 내전 기록 기반 운영 참고 전력</p>
           </div>
           <button onClick={onClose}><X size={20} /></button>
         </div>
@@ -92,7 +92,7 @@ export function PlayerAnalysisModal({ player, onClose, onPlayerUpdated }: Props)
           </div>
           <button className="button primary" disabled={fetchingMatches} onClick={handleFetchMatches}>
             <RefreshCw size={15} className={fetchingMatches ? 'spin' : ''} />
-            {fetchingMatches ? '전적 수집 중...' : 'Match-v5 전적 수집 및 분석'}
+            {fetchingMatches ? '전적 수집 중...' : '일반 전적 갱신 (내전과 별도)'}
           </button>
         </div>
 
@@ -139,17 +139,17 @@ export function PlayerAnalysisModal({ player, onClose, onPlayerUpdated }: Props)
                 <h3>점수 산출 근거 및 보정 내역</h3>
                 <div className="breakdown-list">
                   <div className="breakdown-item">
-                    <span className="item-title">1. 기본 랭크 점수</span>
+                    <span className="item-title">1. 내전 운영 등급 초기값</span>
                     <span className="item-desc">{breakdown.baseTierDescription}</span>
                     <strong className="item-val">+{breakdown.baseTierScore}</strong>
                   </div>
                   <div className="breakdown-item">
-                    <span className="item-title">2. 과거 최고 티어 감쇄 보정</span>
+                    <span className="item-title">2. 외부 랭크 보정 (내전 점수에는 미적용)</span>
                     <span className="item-desc">{breakdown.peakRankDescription}</span>
                     <strong className="item-val">+{breakdown.peakRankBonus}</strong>
                   </div>
                   <div className="breakdown-item">
-                    <span className="item-title">3. 최근 성과 지표 보정</span>
+                    <span className="item-title">3. 최근 내전 승패와 표본 보정</span>
                     <span className="item-desc">{breakdown.recentPerformanceDescription}</span>
                     <strong className={`item-val ${breakdown.recentPerformanceModifier >= 0 ? 'good' : 'bad'}`}>
                       {breakdown.recentPerformanceModifier >= 0 ? `+${breakdown.recentPerformanceModifier}` : breakdown.recentPerformanceModifier}
@@ -217,8 +217,8 @@ export function PlayerAnalysisModal({ player, onClose, onPlayerUpdated }: Props)
 
             <div className="panel">
               <h3>최근 저장된 경기 10판</h3>
-              <p className="helper">캐시된 경기 목록입니다. 선택한 분석 범위의 경기 수와 다를 수 있습니다.</p>
-              {detail?.recentMatches?.length ? <div className="table-wrap"><table><thead><tr><th>날짜</th><th>큐</th><th>챔피언</th><th>포지션</th><th>결과</th><th>K / D / A</th></tr></thead><tbody>{detail.recentMatches.map((m) => <tr key={m.matchId}><td>{new Date(m.playedAt).toLocaleDateString('ko-KR')}</td><td>{m.queueId === 420 ? '솔랭' : m.queueId === 440 ? '자랭' : '기타'}</td><td>{m.championName}</td><td>{m.position}</td><td>{m.win ? '승리' : '패배'}</td><td>{m.kills} / {m.deaths} / {m.assists}</td></tr>)}</tbody></table></div> : <p className="helper">저장된 경기가 없습니다. 위에서 전적을 수집해 주세요.</p>}
+              <p className="helper">DB의 완료 내전 중 실제 시각·시간·지표가 입력된 최근 180일 기록입니다. 일반 전적 갱신은 이 목록과 별도입니다.</p>
+              {detail?.recentMatches?.length ? <div className="table-wrap"><table><thead><tr><th>날짜</th><th>큐</th><th>챔피언</th><th>포지션</th><th>결과</th><th>K / D / A</th></tr></thead><tbody>{detail.recentMatches.map((m) => <tr key={m.matchId}><td>{new Date(m.playedAt).toLocaleDateString('ko-KR')}</td><td>{m.queueId === 0 ? '내전' : m.queueId === 420 ? '솔랭' : m.queueId === 440 ? '자랭' : '기타'}</td><td>{m.championName}</td><td>{m.position}</td><td>{m.win ? '승리' : '패배'}</td><td>{m.kills} / {m.deaths} / {m.assists}</td></tr>)}</tbody></table></div> : <p className="helper">분석 가능한 내전 기록이 없습니다. 내전 전적에서 경기 시간과 개인 지표를 입력하세요.</p>}
             </div>
             {/* 모스트 챔피언 TOP 5 */}
             <div className="panel champions-panel">
@@ -251,7 +251,7 @@ export function PlayerAnalysisModal({ player, onClose, onPlayerUpdated }: Props)
                   </table>
                 </div>
               ) : (
-                <div className="empty">수집된 챔피언 전적 데이터가 없습니다. 상단에서 전적 수집을 진행해 주세요.</div>
+                <div className="empty">챔피언이 입력된 내전 기록이 없습니다. 내전 전적에서 결과를 기록하세요.</div>
               )}
             </div>
           </div>

@@ -1,173 +1,107 @@
-# HUH — League of Legends 내전 관리
+# HUH — 동아리 내전 운영
 
-40명 이상이 참여하는 비공개 League of Legends 커뮤니티를 위한 실제 운영 애플리케이션입니다. GitHub Pages의 React 화면, Vercel Functions 백엔드, Supabase PostgreSQL 데이터베이스로 구성됩니다.
+**참가자 선택 → 포지션별 팀 편성 → 경기 기록 → 다음 내전 준비**를 한곳에서 운영합니다. 참가자·내전·팀·대회는 기존 **Supabase 중앙 DB**에 보관하며 어느 기기에서 로그인해도 같은 기록을 사용합니다. 브라우저 저장으로 DB를 대체하지 않습니다.
 
-## 실제 아키텍처
+**현재 상태:** [공개 심사 화면](https://huh-riot-review.vercel.app/#/review)은 로그인 없이 열리며 예시 참가자와 결과로 5단계를 체험할 수 있습니다. 기존 Vercel 관리 연결을 복구했고 서버 미리보기도 배포했습니다. 기존 Supabase 호스트가 응답하지 않아 실제 기록 저장과 운영 적용은 아직 완료되지 않았습니다. DB를 새로 만들거나 기존 데이터를 덮어쓰지 않았습니다.
 
-```text
-GitHub Pages (React + TypeScript, /HUH/)
-  └─ HTTPS + CORS → Vercel Functions (/api/*)
-                        ├─ Supabase PostgreSQL
-                        ├─ Riot Account-v1 / League-v4
-                        └─ OP.GG public profile adapter
-```
+## 사용자가 할 일
 
-- 프론트: Vite, React, TypeScript, HashRouter. `/HUH/` base path와 직접 새로고침을 안전하게 처리합니다.
-- 백엔드: `api/` 아래 Vercel TypeScript Functions. 브라우저에서 외부 API나 DB를 직접 호출하지 않습니다.
-- DB: `supabase/migrations/001_initial_schema.sql`. 플레이어, 이벤트, 이벤트 참가자, 경기, 경기 참가자를 저장합니다.
-- 인증: Supabase Auth 이메일/비밀번호 로그인 세션을 사용하며, Vercel Functions가 Bearer 토큰을 매 요청 검증합니다.
+이미 배포된 사이트는 [HUH](https://wnstj999.github.io/HUH/)에서 운영자 계정으로 로그인합니다. 이 저장소의 변경은 배포 후 반영됩니다.
 
-GitHub Pages의 UI 파일과 `/api/health`는 공개되어도 플레이어·경기 데이터는 로그인 뒤에 있습니다. Supabase Dashboard에서 만든 운영자 계정만 사용하고 공개 회원가입은 비활성화하십시오. 기존 `HUH_ADMIN_TOKEN`은 전환용 fallback일 뿐이며 Auth 배포 확인 후 제거합니다.
+로컬에서 실행하려면:
 
-프론트 주소: <https://wnstj999.github.io/HUH/>
+1. [Node.js 22 LTS](https://nodejs.org/)를 설치합니다.
+2. 이 변경이 포함된 저장소 ZIP을 내려받아 압축을 풉니다. `package.json`과 `start.cmd`가 있는 폴더를 엽니다.
+3. Windows에서는 **start.cmd**를 더블클릭합니다. 첫 실행은 필요한 프로그램을 설치하며 인터넷이 필요합니다. 사용하는 동안 실행 창을 열어 두세요.
+4. 브라우저에서 운영자 계정으로 로그인합니다. 참가자와 경기 기록은 기존 중앙 DB를 사용합니다.
+5. 종료는 실행 창에서 Ctrl+C를 누릅니다.
 
-## 구현된 기능
-
-- 플레이어 추가·수정·비활성화, 검색, 티어·포지션 필터, 오늘 참가 토글
-- Riot ID 마지막 `#` 기준 파싱과 공백 보존, Riot ID·PUUID DB 중복 방지
-- 내전 티어 `TR(15)`부터 `FF(4)`까지 점수 자동 계산
-- Riot ID → PUUID → KR 솔로랭크 실제 조회와 승률 저장
-- OP.GG 공개 프로필 서버 조회, Solo/Flex 분리, 시즌별 구조화 레코드 기반 최고 기록 저장
-- 참가자 10명 선택, 가능한 포지션 검증, 전 조합의 팀 점수 차이 최소화
-- 이벤트·경기·포지션 배정 원자적 저장, 승리팀·상태·세부 전적 입력
-- 저장된 경기 기반 개인 승패, 승률, KDA, CS, 딜량, 포지션, 챔피언 통계
-- 한국어 기본 및 English 전환, 선택 언어 유지
-- 한국어·영어 개인정보 처리방침과 이용약관
-- Tournament API adapter와 DB 필드. 권한 전에는 운영 UI에 `권한 대기`만 표시
-
-## 로컬 실행
-
-Node.js 22를 권장합니다.
-
-```powershell
-npm install
-Copy-Item .env.example .env.local
-npm run dev
-```
-
-macOS/Linux에서는 두 번째 명령을 `cp .env.example .env.local`로 바꾸면 됩니다. 프론트 개발 서버는 기본적으로 `http://localhost:5173/HUH/`입니다.
-
-Vercel Functions까지 로컬에서 실행하려면 `.env.local`의 `VITE_API_BASE_URL=http://localhost:3000`을 유지하고 두 터미널에서 각각 실행합니다. 첫 `vercel dev` 실행은 Vercel 로그인과 프로젝트 연결을 요청할 수 있습니다.
-
-```powershell
-npx vercel dev --listen 3000
-npm run dev
-```
-
-## Supabase 설정
-
-1. 무료 Supabase 프로젝트를 생성합니다.
-2. SQL Editor에서 `supabase/migrations/001_initial_schema.sql`, `002_player_season_rank_history.sql`, `003_auth_and_encrypted_settings.sql` 순서로 실행합니다.
-3. Data API → Settings에서 운영 테이블과 `create_inhouse_event`, `create_inhouse_match` 함수를 노출합니다. `app_settings`는 RLS 정책 없이 service role만 접근하도록 유지합니다.
-4. Vercel 프로젝트 환경변수에 아래 값을 추가합니다.
+터미널 사용자는 Windows/macOS/Linux 모두 다음을 실행하면 됩니다.
 
 ```text
-SUPABASE_URL=https://<project>.supabase.co
-SUPABASE_SECRET_KEY=<sb_secret_...>
-# 기존 프로젝트에서 새 Secret Key를 아직 발급하지 않은 경우에만 사용
-SUPABASE_SERVICE_ROLE_KEY=<legacy-service-role-key>
+npm ci
+npm start
 ```
 
-모든 테이블은 RLS가 활성화되어 있고 브라우저용 공개 정책은 만들지 않습니다. DB 함수도 `service_role`만 실행할 수 있습니다. Supabase Secret Key는 Vercel 서버에서만 사용하며 `VITE_` 접두사를 붙이면 안 됩니다. 기존 JWT 방식의 Service Role Key도 전환 기간 동안 fallback으로 지원합니다.
+**DB 생성, SQL 실행, .env 편집은 사용자 실행 절차에 없습니다.** `npm start`는 기존 공개 사이트의 브라우저용 로그인 연결 정보를 자동으로 읽습니다. 서버 비밀키를 다운로드하거나 브라우저에 넣지 않습니다. 운영 DB와 서버가 정상이어야 저장이 가능합니다. 운영 계정은 사이트를 관리하는 담당자가 준비해야 합니다.
 
-## Vercel 백엔드 배포
+기본 주소는 `http://localhost:5173/HUH/`입니다. 다른 창에서 이미 같은 포트를 사용 중이면 해당 실행 창을 종료한 뒤 다시 시작합니다. 포트를 임의로 바꾸면 기존 서버 CORS에서 거절될 수 있습니다.
 
-Vercel에서 이 GitHub 저장소를 Import한 뒤 Framework Preset을 `Vite`로 두고 다음 환경변수를 설정합니다.
+## 한 판 운영하기
+
+1. **플레이어**에서 이름·Riot ID·내전 운영 등급·가능 포지션을 등록합니다. 오늘 참가 스위치를 켭니다.
+2. **내전 생성**에서 참가자 10명을 선택하고 자동 팀 생성을 누릅니다. 포지션별 전력으로 편성하며 선수 교환도 가능합니다.
+3. 경기 이름을 입력하고 저장합니다. DB 저장이 실패하면 오류를 표시하며 다른 저장소로 넘기지 않습니다.
+4. **내전 전적**에서 승리팀·완료 상태·실제 경기 시작 시각·경기 시간(초)을 기록합니다. 상세 항목에 챔피언·K/D/A·CS·골드·딜량·시야 점수를 입력합니다.
+5. **개인 통계**와 선수의 전력 상세에서 기록을 확인합니다. 다음 팀 편성에 갱신된 내전 전력이 사용됩니다.
+
+여러 팀 편성, 팀 관리·비교, 토너먼트 대진표도 유지합니다. 일반 Riot 전적 갱신은 내전 기록과 별도입니다.
+
+## 전력 점수의 의미
+
+- 내전 운영 등급의 기존 4~15점은 초기 기준이며, 전력 모델은 이를 1000~2100 범위 초기값으로 변환합니다. Riot 솔랭이나 최고 티어를 내전 점수로 가장하지 않습니다.
+- 분석 대상은 DB의 완료 내전 중 실제 경기 시각·시간·K/D/A·CS·골드·딜량·시야 점수가 모두 입력된 기록입니다. 최근 180일, 선수별 최대 100경기이며 서버는 최신 완료 경기 500개를 읽습니다. 8분 미만 경기, 미래 시각, 중복 경기, 미입력 지표는 제외합니다.
+- 기존 전력 모델의 최근성 가중치와 표본 보정을 내전 승패에 적용합니다. KDA·딜량은 설명용 지표이며 점수에 직접 더하지 않습니다. 표본이 없으면 초기 등급만 사용하고 신뢰도가 낮음을 표시합니다.
+- 이는 동아리 팀 편성을 위한 **운영 참고값**입니다. 실제 실력이나 승률 예측의 정확도를 검증한 모델이라고 주장하지 않습니다.
+- 개인 통계는 입력된 지표만으로 평균을 계산합니다. 기록이 없는 지표는 0이 아니라 `—`로 표시합니다. 평균 KDA는 K/D/A가 입력된 경기의 경기별 KDA 평균을 유지합니다.
+
+## Riot Production 재신청
+
+현재 구현 범위는 참가자·내전 결과의 중앙 저장, 내전 전력 조회, 포지션별 팀 편성, 일반 Riot 전적 조회 경로입니다. 로그인 전에는 서비스 소개와 개인정보 처리방침·이용약관을 확인할 수 있습니다.
+
+**자동 수집 서버 경로와 심사용 프로토타입을 구현했습니다. 실제 Riot 경기로 검증하거나 운영 배포한 상태는 아닙니다.** 로그인 전 `자동 수집 흐름 체험`에서 `/review`의 5단계 예시를 따라볼 수 있습니다. 예시는 실제 Riot 호출이나 DB 저장을 하지 않습니다. 신청 설명과 공개 전 확인 사항은 [신청 안내](docs/RIOT_APPLICATION.md)에 있습니다.
+
+운영 환경에서는 내전을 저장하고 전적 상세에서 참가자 10명의 LoL 내전 기록 공유 동의를 확인한 뒤 Tournament 코드를 발급합니다. 참가자의 PUUID가 먼저 연결되어 있어야 합니다. 발급 코드로 생성한 로비의 종료 알림만 처리하며 일반 사용자 설정 게임을 자동 검색하지 않습니다. 종료 알림의 검증 정보·코드·경기 ID·10명 참가자·팀을 확인하고 결과를 한 트랜잭션으로 저장합니다. 재전송은 중복 저장하지 않습니다. 실패하면 Riot 종료 알림 재전송 또는 운영자 `결과 다시 수집`을 사용합니다. 발급 응답이 불확실하면 중복 발급하지 않고 운영자 복구가 필요합니다. 자동 수집 예약 이후 수동 수정은 차단합니다.
+
+서버는 승인된 키와 KR Tournament Provider ID가 준비된 경우에만 발급합니다. 운영 담당자가 결과 수신 주소의 도메인·인증서 지원 여부와 Match-v5 응답의 코드/시각/팀 필드를 실제로 확인한 뒤 활성화해야 합니다. 키만 넣거나 플래그만 켜서 운영 시작을 선언하지 않습니다. 통계 포지션은 사전에 확정한 내전 포지션이며 Riot가 추정한 포지션으로 조용히 바꾸지 않습니다.
+
+[Riot FAQ](https://developer.riotgames.com/docs/faqs)는 소스 저장소 링크만으로 신청을 받지 않으며 작동하는 사이트·앱이나 사용자 흐름을 보여주는 자료를 요구합니다. 공개 URL과 심사용 계정 또는 로그인 이후 흐름의 녹화 자료를 준비하고, 프로토타입 또는 운영 흐름의 검증 범위를 정확히 설명해 신청하세요. [LoL 신청 안내](https://developer.riotgames.com/docs/lol#use-cases-for-production-keys)는 검토 가능한 프로토타입·목업도 인정합니다. 로컬 주소는 외부 심사자가 접속할 수 없습니다. [Portal 정책](https://developer.riotgames.com/docs/portal)상 Personal Key는 Tournament API를 사용할 수 없습니다. [LoL 정책](https://developer.riotgames.com/docs/lol)의 사용자 설정 경기 기록 공유 동의 조건도 자동 수집 도입 전에 확인해야 합니다.
+
+## 운영 연결 상태
+
+기존 주소:
+
+- 프론트: `https://wnstj999.github.io/HUH/`
+- 백엔드: `https://huh-api.vercel.app`
+- DB·인증: 기존 Supabase 프로젝트
+
+`GET /api/health`는 키·계정·선수 데이터를 노출하지 않고 서버·DB·Riot 설정 상태를 반환합니다. `backend=true`만으로 DB 저장 가능 상태를 판단하면 안 됩니다. `database=false`이면 실제 기록을 읽고 저장하는 운영 연결부터 복구해야 합니다.
+
+리메이크 작업 시작 시 기존 공개 서버는 `database=false`였으며 참가자 조회는 500 오류였습니다. 기존 DB·Vercel 관리 연결이 필요합니다. 사용자가 SQL이나 DB 설정을 직접 수행하는 방식으로 해결하지 않습니다.
+
+## 배포 담당자용 계약
+
+기존 구조를 유지합니다.
 
 ```text
-SUPABASE_URL=...
-SUPABASE_SECRET_KEY=...
-# 또는 기존 프로젝트의 SUPABASE_SERVICE_ROLE_KEY
-RIOT_API_KEY=                  # Production Key가 생긴 뒤 선택
-SETTINGS_ENCRYPTION_KEY=<32자 이상의 임의 문자열>
-OPGG_SCRAPING_ENABLED=true
-TOURNAMENT_API_ENABLED=false
-# 전환 완료 뒤 삭제
-HUH_ADMIN_TOKEN=
-ALLOWED_ORIGINS=https://wnstj999.github.io,http://localhost:5173,http://localhost:4173
+GitHub Pages / React → Vercel Functions → Supabase PostgreSQL / Auth
+                                      → Riot API / OP.GG adapter
 ```
 
-배포 후 `https://<vercel-domain>/api/health`가 민감한 값 없이 Backend, Database, Riot 설정, OP.GG, Tournament 상태를 반환합니다.
+운영 반영 순서:
 
-이 저장소의 `wnstj999.github.io`, `/HUH/` 값은 현재 HUH 배포용입니다. fork하거나 저장소 이름을 바꾸면 `vite.config.ts`의 base, GitHub Pages URL, `ALLOWED_ORIGINS`를 함께 바꾸십시오.
+1. 기존 Supabase 프로젝트 상태와 서버의 프로젝트 URL·서버 키가 일치하는지 확인합니다. 기존 데이터와 적용된 migration 이력을 먼저 점검합니다.
+2. 미적용 migration만 순서대로 적용합니다. 이번 변경의 `005_atomic_match_results.sql`, `006_atomic_custom_teams.sql`은 기존 행을 삭제하지 않고 저장 함수를 추가합니다. 005/006/007을 서버 코드보다 먼저 적용합니다. `007_tournament_collection.sql`은 자동 수집 예약·검증·중복 저장 방지와 수동 수정 충돌 차단을 추가합니다.
+3. 기존 운영자 계정과 공개 회원가입 비활성화를 확인합니다. 데이터 API는 Bearer 세션을 서버에서 검증합니다. `HUH_DISABLE_AUTH` 우회는 지원하지 않습니다. 전환용 `HUH_ADMIN_TOKEN` 처리는 기존 인증 계약에 따라 유지합니다.
+4. Vercel에 서버 코드를 배포하고 인증된 참가자·경기·팀 저장을 확인합니다. 서버 기능이 준비되지 않았으면 임시 로컬 저장으로 성공 처리하지 않습니다.
+5. 기존 GitHub Actions 프론트 환경변수로 Pages를 배포하고 별도 브라우저 로그인에서 동일한 DB 기록을 확인합니다.
 
-## GitHub Pages 배포
+서버 설정은 `.env.example`의 기존 계약을 사용합니다. `SUPABASE_URL`, 서버 Secret/Service Role Key, `SETTINGS_ENCRYPTION_KEY`, `RIOT_API_KEY`는 서버에만 보관합니다. Riot 키 중앙 저장은 기존 AES-256-GCM 암호화를 유지합니다. 브라우저에는 `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`(Publishable/Anon Key)만 전달합니다. 서버 키에 `VITE_` 접두사를 붙이지 않습니다.
 
-`.github/workflows/deploy-pages.yml`이 `main` push에서 테스트와 빌드를 거친 뒤 `dist/`를 Pages에 배포합니다.
-
-1. GitHub 저장소 Settings → Pages → Source를 **GitHub Actions**로 설정합니다.
-2. Settings → Secrets and variables → Actions → Variables에 아래 값을 추가합니다. Anon key(Publishable key)는 브라우저 공개용 키이며 Secret/Service Role key를 넣으면 안 됩니다.
-
-```text
-VITE_API_BASE_URL=https://<vercel-domain>
-VITE_SUPABASE_URL=https://<project>.supabase.co
-VITE_SUPABASE_ANON_KEY=<publishable-or-anon-key>
-```
-
-3. `main`에 push하거나 Actions에서 `Deploy GitHub Pages`를 실행합니다.
-
-Vite base는 `/HUH/`이며 앱 라우팅은 HashRouter를 사용하므로 `/HUH/#/players` 같은 경로를 새로고침해도 GitHub Pages 404가 발생하지 않습니다. 기존 `riot.txt`는 빌드 결과 루트로 복사됩니다.
-
-## 최초 배포 순서와 확인
-
-1. Supabase 프로젝트를 만들고 migration SQL 3개를 순서대로 실행합니다.
-2. Supabase Authentication → Users에서 운영자 이메일/비밀번호 계정을 만들고 공개 회원가입을 끕니다.
-3. Vercel에 서버 환경변수를 넣고 배포합니다.
-4. 브라우저에서 `https://<vercel-domain>/api/health`를 열어 `backend=true`, `database=true`를 확인합니다.
-5. GitHub Actions 변수 3개를 설정하고 Pages workflow를 실행합니다.
-6. Pages에서 운영자 계정으로 로그인한 뒤 Settings에서 Riot Personal API Key를 한 번 중앙 저장합니다.
-7. 다른 브라우저에서 같은 계정으로 로그인해 플레이어 목록과 Riot 연결 상태가 같은지 확인합니다.
-
-로그인 계정과 Riot API Key는 중앙 관리되므로 브라우저마다 운영 키를 다시 입력하지 않습니다.
-
-## 로그인과 Riot API Key
-
-Supabase Auth 로그인 세션은 브라우저에 안전하게 유지되고 백엔드는 토큰으로 사용자를 검증합니다. Settings에서 입력한 Riot Personal API Key는 서버에서 먼저 Riot 연결 검사를 통과한 뒤 AES-256-GCM으로 암호화되어 `app_settings` 테이블에 저장됩니다. 암호화 원문과 복호화된 키는 API 응답에 포함되지 않습니다. 암호화 마스터 키인 `SETTINGS_ENCRYPTION_KEY`는 Vercel에만 둡니다.
-
-```text
-Riot ID (GameName#TagLine)
-  → POST /api/riot/account
-  → asia.api.riotgames.com account-v1
-  → PUUID
-  → POST /api/riot/rank 또는 /api/riot/player-refresh
-  → kr.api.riotgames.com league-v4
-  → RANKED_SOLO_5x5 저장
-```
-
-DB에 저장된 암호화 Riot 키가 있으면 그 키를 사용하고, 아직 저장하지 않은 경우에만 Vercel의 `RIOT_API_KEY`를 fallback으로 사용합니다. Development Key는 Riot 정책상 주기적으로 만료되므로 만료 시 어느 컴퓨터에서든 Settings에서 새 키로 한 번 교체하면 됩니다.
-
-## OP.GG 조회 흐름
-
-`POST /api/opgg/history`와 player refresh가 서버에서 `https://op.gg/lol/summoners/kr/...` 공개 프로필을 요청합니다. adapter는 HTML 전체에서 티어 문자열을 긁는 방식이 아니라 각 Next.js Flight 구조화 데이터 블록을 해석하고 다음을 한 레코드 단위로 검증합니다.
-
-- `gameType`이 `SOLORANKED` 또는 `FLEXRANKED`인지
-- 같은 시즌 레코드의 `season`, `rank_entries`, `tier`, `division`, `lp`인지
-- LP가 `null`이면 `0LP`로 만들지 않는지
-
-Solo와 Flex는 별도 결과로 반환하며, OP.GG 실패는 성공한 Riot 현재 랭크 저장을 취소하지 않습니다. 결과는 함수 인스턴스에서 6시간 캐시됩니다. OP.GG 공개 페이지 구조나 접근 정책은 바뀔 수 있으므로 parser 테스트와 실제 조회 점검을 배포 전에 실행하십시오.
-
-## Tournament API
-
-`TOURNAMENT_API_ENABLED=false`가 기본입니다. `server/tournament/adapter.ts`에 Provider, Tournament, Tournament Code 연결 인터페이스가 있고 DB에는 `tournament_code`, `riot_game_id` 및 상세 경기 통계 필드가 준비되어 있습니다. Riot 권한이 승인되기 전에는 실제 코드처럼 보이는 mock tournament code를 만들지 않습니다.
+`npm run dev`는 개발자가 지정한 환경을 사용합니다. `npm start`의 자동 설정은 현재 공개 배포 파일 형식을 읽으므로 배포 형식이 바뀌거나 공개 설정을 확인할 수 없으면 설명 메시지와 함께 종료합니다. 다른 Supabase 프로젝트의 주소와 키를 자동으로 섞지 않습니다.
 
 ## 검증
 
-```bash
+```text
 npm run typecheck
 npm run lint
 npm test
+npm run test:database
 npm run build
-
-# 선택: 실제 OP.GG 공개 프로필 네트워크 검사
-OPGG_LIVE_TEST=true npm test
 ```
 
-## 보안 메모
+`test:database`는 운영 DB에 접속하지 않고 PGlite의 격리 PostgreSQL에서 migration 7개와 자동 결과·팀 저장 실패 시 롤백, 승리팀 취소, 실행 권한을 확인합니다. 테스트 환경은 기본 UUID 함수를 사용하므로 pgcrypto 확장 생성 구문만 건너뜁니다. 실제 Supabase 배포·인증·기존 데이터 검증을 대신하지 않습니다.
 
-- `.env`, `.env.*`, Vercel 로컬 설정, 로그와 빌드 결과는 Git에서 제외됩니다.
-- Riot API Key는 AES-256-GCM 암호문으로만 DB에 저장하고 `SETTINGS_ENCRYPTION_KEY`는 Vercel 환경변수에만 둡니다.
-- Supabase 공개 회원가입을 끄고 Dashboard에서 만든 운영자 계정만 사용합니다.
-- CORS는 GitHub Pages origin과 명시한 localhost만 허용합니다. 브라우저 Origin에는 URL path가 포함되지 않으므로 `/HUH/`만 CORS 수준에서 구분할 수는 없습니다.
-- Auth 전환 확인 후 임시 `HUH_ADMIN_TOKEN`을 제거해 로그인만 허용합니다.
+브라우저 QA의 가상 선수와 가상 로그인은 검증 요청을 가로채는 격리 테스트에만 사용하며 사이트나 운영 DB에 삽입하지 않습니다. 실제 OP.GG 테스트는 `OPGG_LIVE_TEST=true`일 때만 실행합니다.
 
 이 프로젝트는 Riot Games의 공식 서비스 또는 승인된 프로젝트가 아니며 Riot Games의 공식 의견을 나타내지 않습니다.

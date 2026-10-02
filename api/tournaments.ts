@@ -1,3 +1,5 @@
+import callbackHandler from '../server/tournament/callback-handler.js';
+import type { VercelRequest, VercelResponse } from '../server/lib/http.js';
 import { db } from '../server/lib/db.js';
 import { handler, bodyAsObject, HttpError, requireMethod } from '../server/lib/http.js';
 
@@ -40,7 +42,7 @@ function generateStandardSeeds(teamIds: string[], size: 4 | 8 | 16): SeedPair[] 
   ];
 }
 
-export default handler(async (req, res) => {
+const existingHandler = handler(async (req, res) => {
   const client = db();
   const tournamentId = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
 
@@ -344,3 +346,7 @@ export default handler(async (req, res) => {
 
   throw new HttpError(405, 'METHOD_NOT_ALLOWED', '지원하지 않는 메서드입니다.');
 });
+
+export default function endpoint(req: VercelRequest, res: VercelResponse) {
+  return req.query.action === 'tournament-callback' ? callbackHandler(req,res) : existingHandler(req,res);
+}

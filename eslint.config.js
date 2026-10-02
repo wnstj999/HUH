@@ -18,7 +18,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['api/**/*.ts', 'vite.config.ts', 'tests/**/*.ts'],
+    files: ['api/**/*.ts', 'vite.config.ts', 'tests/**/*.ts', 'scripts/**/*.mjs'],
     languageOptions: { ecmaVersion: 2022, globals: globals.node },
   },
 );

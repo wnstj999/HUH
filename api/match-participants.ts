@@ -1,4 +1,5 @@
-﻿import { assertDb, db } from '../server/lib/db.js';
+import { requireManualMatch } from '../server/tournament/manual-guard.js';
+import { assertDb, db } from '../server/lib/db.js';
 import { bodyAsObject, handler, HttpError, requireMethod } from '../server/lib/http.js';
 
 const FIELD_MAP = {
@@ -9,6 +10,8 @@ export default handler(async (req, res) => {
   requireMethod(req, ['PATCH']);
   const id = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
   if (!id) throw new HttpError(400, 'ID_REQUIRED', '참가 기록 ID가 필요합니다.');
+  const participant = assertDb(await db().from('match_participants').select('match_id').eq('id',id).single());
+  await requireManualMatch(String(participant.match_id));
   const body = bodyAsObject(req);
   const patch: Record<string, unknown> = {};
   for (const [inputKey, column] of Object.entries(FIELD_MAP)) {
