@@ -2,7 +2,7 @@
 
 ## Current status
 
-This branch includes an interactive review prototype and a server implementation for Tournament code creation and result collection. Neither has been deployed to the public site yet. The existing backend reports a disconnected database. The developer does not have approved Tournament access and has not verified this flow with a real Riot custom match. Do not describe the prototype as live automatic collection. The server behavior below is implemented and covered by isolated tests, not a demonstrated guarantee against live Riot or Supabase services.
+This branch includes an interactive review prototype and a server implementation for Tournament code creation and result collection. The synthetic review prototype is publicly deployed at https://huh-riot-review.vercel.app/#/review and was verified in an unauthenticated browser. The server implementation has a protected Vercel preview; production activation is pending database recovery. The existing backend reports a disconnected database. The developer does not have approved Tournament access and has not verified this flow with a real Riot custom match. Do not describe the prototype as live automatic collection. The server behavior below is implemented and covered by isolated tests, not a demonstrated guarantee against live Riot or Supabase services.
 
 ## Product description (application draft)
 
@@ -18,7 +18,7 @@ The Riot key remains server-side and is encrypted when stored in the existing se
 
 ## Review instructions
 
-1. Once the branch is published, open `https://wnstj999.github.io/HUH/#/review` (login is not required). Until deployment, this URL does not show the new prototype. Local review: start the branch and open `http://localhost:5173/HUH/#/review`.
+1. Open `https://huh-riot-review.vercel.app/#/review` (login is not required). Local review: start the branch and open `http://localhost:5173/HUH/#/review`.
 2. Confirm the scenario checkbox and follow all five steps: participants → 5v5 → code lobby → result collection → next match.
 3. All prototype players, codes and results are explicitly synthetic. No Riot requests or database writes occur on this page. It illustrates the intended player experience rather than proving the live integration.
 4. Privacy policy and terms are linked from the page. Actual organizer functions require a prepared review account and a working backend.
@@ -26,9 +26,9 @@ The Riot key remains server-side and is encrypted when stored in the existing se
 
 ## Before submitting
 
-- Make the review link or recorded flow accessible to Riot, and verify it from an unrelated browser session.
+- Public prototype deployment verified: a fresh unauthenticated browser rendered ten synthetic results with no page errors and no API requests.
 - Verify policy pages and a private route for participant correction/removal requests with the organizer. Do not put real participant details in public GitHub issues.
-- Describe exactly what was tested: unit tests and isolated PostgreSQL import tests are complete; actual Supabase login/storage, public deployment and live Tournament callbacks are pending.
+- Describe exactly what was tested: unit tests and isolated PostgreSQL import tests are complete; public synthetic prototype deployment is verified; actual Supabase login/storage and live Tournament callbacks remain pending.
 - Confirm whether Riot will approve this specific community use of Tournament access. Access and application approval are Riot's decision.
 
 ## Activation after approval (deployment operator)
