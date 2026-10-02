@@ -33,6 +33,10 @@
     {
       "source": "/api/match-participants/:id",
       "destination": "/api/match-participants?id=:id"
+    },
+    {
+      "source": "/HUH/:path*",
+      "destination": "/:path*"
     }
   ],
   "headers": [
