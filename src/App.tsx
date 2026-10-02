@@ -1,3 +1,4 @@
+import { LOCAL_MODE, seedLocalDemo } from './lib/localMode';
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type PropsWithChildren, type ReactNode } from 'react';
 import { NavLink, Route, Routes, useNavigate } from 'react-router-dom';
 import { Activity, BarChart3, CalendarPlus, ChevronDown, CircleGauge, History, Languages, LogOut, Pencil, RefreshCw, Save, Settings as SettingsIcon, Shield, ShieldCheck, Sparkles, Trash2, Trophy, UserPlus, Users, X } from 'lucide-react';
@@ -167,7 +168,7 @@ function Shell({ children, userEmail, onSignOut }: PropsWithChildren<{ userEmail
             )}
           </div>
         </header>
-        <main className="main-content">{children}</main>
+        <main className="main-content">{LOCAL_MODE && <div className="alert"><strong>로컬 시연 / LOCAL DEMO</strong><span>이 브라우저에만 저장됩니다. Riot 조회·자동 수집은 연결되지 않았습니다. / Stored in this browser only. No live Riot data.</span></div>}{children}</main>
         <footer>
           <span>{t('footer')}</span>
           <NavLink to="/privacy">{t('privacy')}</NavLink>
@@ -429,6 +430,7 @@ function SettingsPage({ data, reload }: ReturnType<typeof useAppData>) {
     catch (cause) { setResult(cause instanceof Error ? cause.message : String(cause)); }
     finally { setTesting(false); }
   }
+  if (LOCAL_MODE) return <><PageHeader title={t('settings')} /><article className="panel"><h2>로컬 시연 / Local demo</h2><p>DB·로그인·API 키 없이 참가자와 경기 결과를 저장합니다. 브라우저 데이터를 지우면 기록이 사라집니다.</p><p>Riot 키는 입력하지 마세요. 실제 전적 조회와 내전 자동 수집은 이 모드에서 제공하지 않습니다.</p><button className="button primary" onClick={() => { try { seedLocalDemo(); setResult('예시 선수 10명을 추가했습니다.'); void reload(); } catch (error) { setResult(error instanceof Error ? error.message : String(error)); } }}>예시 선수 10명 추가</button>{result && <p role="status">{result}</p>}</article></>;
   return <><PageHeader title={t('settings')} kicker="CONNECTIONS & SECURITY" /><section className="settings-grid"><article className="panel"><h2>RIOT API</h2><p className="helper">{t('keySecurity')}</p><form onSubmit={(event) => { event.preventDefault(); void save(); }}><Field label={t('riotApiKey')}><input type="password" className="input" value={riotKey} onChange={(event) => setRiotKey(event.target.value)} placeholder={configured ? t('centralKeyConfigured') : 'RGAPI-…'} autoComplete="new-password" /></Field><div className="button-row settings-buttons"><button type="button" className="button secondary" disabled={testing || !configured} onClick={test}><Activity size={16} />{t('testConnection')}</button><button type="submit" className="button primary" disabled={testing || !riotKey.trim()}><Save size={16} />{t('saveCentral')}</button></div></form>{result && <div className="connection-result">{result}</div>}</article><article className="panel"><div className="panel-head"><h2>SERVICE STATUS</h2><span className="endpoint">{API_BASE_URL}</span></div><StatusLine label={t('backend')} ok={Boolean(data.health?.backend)} /><StatusLine label={t('database')} ok={Boolean(data.health?.database)} /><StatusLine label={t('apiStatus')} ok={configured} /><StatusLine label={t('opgg')} ok={Boolean(data.health?.opggEnabled)} /><StatusLine label={t('tournamentApi')} ok={false} waiting value={t('tournamentWaiting')} /></article></section></>;
 }
 
@@ -467,7 +469,7 @@ function PolicyPage({ kind }: { kind: 'privacy' | 'terms' }) {
 function AuthenticatedApp() {
   const appData = useAppData();
   return (
-    <Shell userEmail="TEST MODE">
+    <Shell userEmail={LOCAL_MODE ? "LOCAL DEMO" : undefined}>
       <Routes>
         <Route path="/" element={<Dashboard {...appData} />} />
         <Route path="/players" element={<PlayersPage {...appData} />} />

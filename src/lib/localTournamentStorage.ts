@@ -17,7 +17,7 @@ function setStored<T>(key: string, data: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(data));
   } catch {
-    // Ignore storage quota errors
+    throw new Error('브라우저 저장 공간이 부족하거나 차단되었습니다. 변경사항이 저장되지 않았습니다.');
   }
 }
 

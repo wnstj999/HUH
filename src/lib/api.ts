@@ -1,3 +1,4 @@
+import { LOCAL_MODE, localRequest } from './localMode';
 import type {
   CustomTeam,
   HealthStatus,
@@ -40,6 +41,7 @@ export class ApiConflictError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (LOCAL_MODE) return localRequest<T>(path, init);
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
   if (init.body) headers.set('Content-Type', 'application/json');
@@ -242,4 +244,3 @@ export const api = {
     return { success: true, id };
   },
 };
-

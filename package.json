@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit --pretty false",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run --configLoader runner --config vitest.config.ts",
-    "vercel-build": "vite build --configLoader runner"
+    "vercel-build": "vite build --configLoader runner",
+    "start": "node scripts/local-demo.mjs",
+    "build:demo": "node scripts/local-demo.mjs --build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

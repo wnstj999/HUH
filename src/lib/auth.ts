@@ -1,9 +1,10 @@
+import { LOCAL_MODE } from './localMode';
 import { createClient, type Session } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
-export const authConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const authConfigured = Boolean(!LOCAL_MODE && supabaseUrl && supabaseAnonKey);
 
 export const authClient = authConfigured
   ? createClient(supabaseUrl!, supabaseAnonKey!, {
