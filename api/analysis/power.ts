@@ -1,109 +1,30 @@
-import { db } from '../../server/lib/db.js';
-import { handler, requireMethod } from '../../server/lib/http.js';
-
-// DB columns use snake_case; the frontend rating contract uses camelCase.
-function mapRating(row: Record<string, unknown> | null) {
-  return row ? Object.fromEntries(Object.entries(row).map(([key, value]) => [key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()), value])) : null;
-}
+import { assertDb, db } from '../../server/lib/db.js';
+import { handler, HttpError, requireMethod } from '../../server/lib/http.js';
+import { mapMatch, mapPlayer } from '../../server/lib/mappers.js';
+import { inhouseRating, inhouseRecords } from '../../server/lib/inhouseAnalysis.js';
 
 export default handler(async (req, res) => {
   requireMethod(req, ['GET']);
   const client = db();
+  const [playerResult, matchResult] = await Promise.all([
+    client.from('players').select('*'),
+    client.from('inhouse_matches').select('*, inhouse_events(id,name), match_participants(*, players(id,display_name,inhouse_tier,inhouse_score))').eq('status', 'COMPLETED').order('created_at', { ascending: false }).limit(500),
+  ]);
+  const players = assertDb(playerResult).map(mapPlayer);
+  const matches = assertDb(matchResult).map(mapMatch);
   const playerId = Array.isArray(req.query.playerId) ? req.query.playerId[0] : req.query.playerId;
-
-  if (playerId) {
-    // 1. 단일 플레이어 전력 점수 및 상세 통계
-    const { data: ratingRow } = await client
-      .from('player_power_ratings')
-      .select('*')
-      .eq('player_id', playerId)
-      .maybeSingle();
-
-    const { data: playerRow } = await client
-      .from('players')
-      .select('*')
-      .eq('id', playerId)
-      .maybeSingle();
-
-    interface StoredMatchRow {
-      champion_name?: string;
-      win?: boolean;
-      kills?: number;
-      deaths?: number;
-      assists?: number;
-      position?: string;
-      match_id?: string;
-      game_creation_at?: string;
-      queue_id?: number;
-    }
-
-    let matchStats: StoredMatchRow[] = [];
-    if (playerRow?.puuid) {
-      const { data: matches } = await client
-        .from('player_match_stats')
-        .select('*')
-        .eq('puuid', playerRow.puuid)
-        .order('game_creation_at', { ascending: false })
-        .limit(100);
-      matchStats = (matches || []) as StoredMatchRow[];
-    }
-
-    // 모스트 챔피언 집계 (판수, 승률, KDA)
-    const champMap = new Map<string, { count: number; wins: number; kills: number; deaths: number; assists: number }>();
-    for (const m of matchStats) {
-      const name = m.champion_name || 'Unknown';
-      const curr = champMap.get(name) || { count: 0, wins: 0, kills: 0, deaths: 0, assists: 0 };
-      curr.count += 1;
-      if (m.win) curr.wins += 1;
-      curr.kills += m.kills || 0;
-      curr.deaths += m.deaths || 0;
-      curr.assists += m.assists || 0;
-      champMap.set(name, curr);
-    }
-
-    const topChampions = Array.from(champMap.entries())
-      .map(([name, stat]) => ({
-        championName: name,
-        games: stat.count,
-        winRate: Math.round((stat.wins / stat.count) * 100),
-        kda: Number(((stat.kills + stat.assists) / Math.max(1, stat.deaths)).toFixed(2)),
-      }))
-      .sort((a, b) => b.games - a.games)
-      .slice(0, 5);
-
-    // 포지션별 통계
-    const positions = ['TOP', 'JUG', 'MID', 'ADC', 'SUP'] as const;
-    const positionStats = positions.map((pos) => {
-      const posMatches = matchStats.filter((m) => m.position === pos);
-      const count = posMatches.length;
-      const wins = posMatches.filter((m) => m.win).length;
-      return {
-        position: pos,
-        games: count,
-        winRate: count > 0 ? Math.round((wins / count) * 100) : 0,
-        score: ratingRow ? Number(ratingRow[`${pos.toLowerCase()}_score`] ?? ratingRow.overall_score) : null,
-      };
-    });
-
-    res.status(200).json({
-      playerId,
-      rating: mapRating(ratingRow),
-      topChampions,
-      positionStats,
-      totalCachedMatches: matchStats.length,
-      recentMatches: matchStats.slice(0, 10).map((m) => ({ matchId: m.match_id, playedAt: m.game_creation_at, queueId: m.queue_id, championName: m.champion_name, position: m.position, win: m.win, kills: m.kills, deaths: m.deaths, assists: m.assists })),
-      lastCalculatedAt: ratingRow?.calculated_at ?? null,
-    });
+  if (!playerId) {
+    res.status(200).json({ source: 'INHOUSE', ratings: Object.fromEntries(players.map(player => [player.id, inhouseRating(player, matches)])) });
     return;
   }
-
-  // 2. 전체 플레이어 전력 점수 맵 조회
-  const { data: allRatings, error } = await client.from('player_power_ratings').select('*');
-  if (error) throw error;
-  const ratingMap: Record<string, unknown> = {};
-  for (const r of allRatings || []) {
-    ratingMap[r.player_id] = mapRating(r);
-  }
-
-  res.status(200).json({ ratings: ratingMap });
+  const player = players.find(player => player.id === playerId);
+  if (!player) throw new HttpError(404, 'NOT_FOUND', '선수를 찾을 수 없습니다.');
+  const rating = inhouseRating(player, matches);
+  const records = inhouseRecords(playerId, matches).filter(record => Date.parse(record.gameCreationAt) <= Date.now() && Date.now() - Date.parse(record.gameCreationAt) <= 180 * 86400000 && record.gameDuration >= 480).sort((a,b) => Date.parse(b.gameCreationAt) - Date.parse(a.gameCreationAt)).slice(0,100);
+  const championNames = [...new Set(records.map(record => record.championName).filter(Boolean))];
+  const topChampions = championNames.map(championName => {
+    const games = records.filter(record => record.championName === championName);
+    return { championName, games: games.length, winRate: Math.round(games.filter(game => game.win).length / games.length * 100), kda: Number((games.reduce((sum,game) => sum + game.kills + game.assists,0) / Math.max(1,games.reduce((sum,game) => sum + game.deaths,0))).toFixed(2)) };
+  }).sort((a,b) => b.games - a.games).slice(0,5);
+  res.status(200).json({ playerId, source: 'INHOUSE', rating, topChampions, positionStats: Object.entries(rating.breakdown.roleMastery).map(([position,role]) => ({ position, games: role.games, winRate: role.winRate, score: role.masteryScore })), totalCachedMatches: records.length, inhouseTotalGames: matches.filter(match => match.participants.some(participant => participant.playerId === playerId)).length, recentMatches: records.slice(0,10).map(record => ({ matchId: record.matchId, playedAt: record.gameCreationAt, queueId: record.queueId, championName: record.championName, position: record.position, win: record.win, kills: record.kills, deaths: record.deaths, assists: record.assists })), lastCalculatedAt: rating.calculatedAt });
 });

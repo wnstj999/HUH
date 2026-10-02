@@ -14,5 +14,5 @@ function riotVerificationAsset(): Plugin {
 export default defineConfig({
   base: '/HUH/',
   plugins: [react(), riotVerificationAsset()],
-  optimizeDeps: { noDiscovery: true, include: [] },
+
 });

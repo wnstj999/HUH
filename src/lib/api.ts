@@ -13,20 +13,10 @@ import type {
 } from '../types';
 import { translateApiError } from '../i18n';
 import { getAuthSession } from './auth';
-import {
-  getLocalCustomTeams,
-  saveLocalCustomTeam,
-  updateLocalCustomTeam,
-  deleteLocalCustomTeam,
-  getLocalTournaments,
-  getLocalTournamentDetail,
-  createLocalTournament,
-  updateLocalTournamentMatch,
-  deleteLocalTournament,
-} from './localTournamentStorage';
+import { normalizeApiData } from './apiData';
 
 const configuredBase = import.meta.env.VITE_API_BASE_URL?.trim();
-export const API_BASE_URL = (configuredBase || 'http://localhost:3000').replace(/\/$/, '');
+export const API_BASE_URL = (configuredBase || 'https://huh-api.vercel.app').replace(/\/$/, '');
 
 interface ApiErrorBody { error?: { code?: string; message?: string }; message?: string; conflict?: boolean }
 
@@ -53,27 +43,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new Error(translateApiError(body.error?.code, body.error?.message || body.message || `요청 실패 (${response.status})`));
   }
-  return body;
+  return normalizeApiData(body) as T;
 }
 
-let serverCapabilities: { tournament: boolean; customTeams: boolean; analysis: boolean } = {
-  tournament: false,
-  customTeams: false,
-  analysis: false,
-};
-
 export const api = {
-  health: async () => {
-    const res = await request<HealthStatus>('/api/health');
-    const extra = res as unknown as Record<string, unknown>;
-    const enabled = Boolean(res.tournamentEnabled || extra.version === 'v1.1-consolidated');
-    serverCapabilities = {
-      tournament: enabled,
-      customTeams: enabled,
-      analysis: enabled,
-    };
-    return res;
-  },
+  health: () => request<HealthStatus>('/api/health'),
   players: () => request<{ players: Player[] }>('/api/players').then((result) => result.players),
   createPlayer: (input: PlayerInput) => request<{ player: Player }>('/api/players', { method: 'POST', body: JSON.stringify(input) }).then((result) => result.player),
   updatePlayer: (id: string, input: Partial<PlayerInput>) => request<{ player: Player }>(`/api/players/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((result) => result.player),
@@ -107,139 +81,13 @@ export const api = {
     return request<PlayerPowerDetail>('/api/analysis/power?playerId=' + encodeURIComponent(playerId));
   },
 
-  // 커스텀 팀 (로컬 퍼스트: 서버 미지원 시 브라우저 콘솔 에러 없이 로컬 스토리지 즉시 사용)
-  customTeams: async (): Promise<CustomTeam[]> => {
-    if (serverCapabilities.customTeams) {
-      try {
-        const res = await request<{ teams: CustomTeam[] }>('/api/custom-teams');
-        return res.teams;
-      } catch {
-        // 폴백
-      }
-    }
-    return getLocalCustomTeams();
-  },
-
-  createCustomTeam: async (input: {
-    name: string;
-    source?: 'MANUAL' | 'AUTO_BALANCED';
-    notes?: string;
-    members: Array<{ position: 'TOP' | 'JUG' | 'MID' | 'ADC' | 'SUP'; riotId: string; playerName?: string; playerId?: string; isCaptain?: boolean }>;
-  }): Promise<CustomTeam> => {
-    if (serverCapabilities.customTeams) {
-      try {
-        const res = await request<{ team: CustomTeam }>('/api/custom-teams', {
-          method: 'POST',
-          body: JSON.stringify(input),
-        });
-        return res.team;
-      } catch {
-        // 폴백
-      }
-    }
-    return saveLocalCustomTeam(input);
-  },
-
-  updateCustomTeam: async (id: string, input: Partial<CustomTeam>): Promise<CustomTeam> => {
-    if (serverCapabilities.customTeams) {
-      try {
-        const res = await request<{ team: CustomTeam }>(`/api/custom-teams/${id}`, {
-          method: 'PATCH',
-          body: JSON.stringify(input),
-        });
-        return res.team;
-      } catch {
-        // 폴백
-      }
-    }
-    return updateLocalCustomTeam(id, input);
-  },
-
-  deleteCustomTeam: async (id: string): Promise<{ success: boolean; id: string }> => {
-    if (serverCapabilities.customTeams) {
-      try {
-        return await request<{ success: boolean; id: string }>(`/api/custom-teams/${id}`, { method: 'DELETE' });
-      } catch {
-        // 폴백
-      }
-    }
-    deleteLocalCustomTeam(id);
-    return { success: true, id };
-  },
-
-  // 토너먼트 (로컬 퍼스트: 서버 미지원 시 브라우저 콘솔 에러 없이 로컬 스토리지 즉시 사용)
-  tournaments: async (): Promise<Tournament[]> => {
-    if (serverCapabilities.tournament) {
-      try {
-        const res = await request<{ tournaments: Tournament[] }>('/api/tournaments');
-        return res.tournaments;
-      } catch {
-        // 폴백
-      }
-    }
-    return getLocalTournaments();
-  },
-
-  createTournament: async (input: {
-    name: string;
-    bracketSize: 4 | 8 | 16;
-    format: 'BO1' | 'BO3' | 'BO5';
-    seedingType: 'POWER_SEED' | 'RANDOM' | 'MANUAL';
-    teamIds: string[];
-  }): Promise<Tournament> => {
-    if (serverCapabilities.tournament) {
-      try {
-        const res = await request<{ tournament: Tournament }>('/api/tournaments', {
-          method: 'POST',
-          body: JSON.stringify(input),
-        });
-        return res.tournament;
-      } catch {
-        // 폴백
-      }
-    }
-    return createLocalTournament(input);
-  },
-
-  tournamentDetail: async (id: string): Promise<{ tournament: Tournament; matches: TournamentMatch[] }> => {
-    if (serverCapabilities.tournament) {
-      try {
-        return await request<{ tournament: Tournament; matches: TournamentMatch[] }>(`/api/tournaments/${id}`);
-      } catch {
-        // 폴백
-      }
-    }
-    return getLocalTournamentDetail(id);
-  },
-
-  updateTournamentMatch: async (
-    id: string,
-    input: { matchId: string; winnerTeamId: string | null; team1Score: number; team2Score: number; forceUpdate?: boolean }
-  ): Promise<{ success: boolean; matches: TournamentMatch[] }> => {
-    if (serverCapabilities.tournament) {
-      try {
-        return await request<{ success: boolean; matches: TournamentMatch[] }>(`/api/tournaments/${id}`, {
-          method: 'PATCH',
-          body: JSON.stringify(input),
-        });
-      } catch (err) {
-        if (err instanceof ApiConflictError) throw err;
-      }
-    }
-    const matches = updateLocalTournamentMatch(id, input);
-    return { success: true, matches };
-  },
-
-  deleteTournament: async (id: string): Promise<{ success: boolean; id: string }> => {
-    if (serverCapabilities.tournament) {
-      try {
-        return await request<{ success: boolean; id: string }>(`/api/tournaments/${id}`, { method: 'DELETE' });
-      } catch {
-        // 폴백
-      }
-    }
-    deleteLocalTournament(id);
-    return { success: true, id };
-  },
+  customTeams: () => request<{ teams: CustomTeam[] }>('/api/custom-teams').then(r => r.teams),
+  createCustomTeam: (input: { name: string; source?: 'MANUAL' | 'AUTO_BALANCED'; notes?: string; members: Array<{ position: 'TOP' | 'JUG' | 'MID' | 'ADC' | 'SUP'; riotId: string; playerName?: string; playerId?: string; isCaptain?: boolean }> }) => request<{ team: CustomTeam }>('/api/custom-teams', { method: 'POST', body: JSON.stringify(input) }).then(r => r.team),
+  updateCustomTeam: (id: string, input: Partial<CustomTeam>) => request<{ team: CustomTeam }>(`/api/custom-teams/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then(r => r.team),
+  deleteCustomTeam: (id: string) => request<{ success: boolean; id: string }>(`/api/custom-teams/${id}`, { method: 'DELETE' }),
+  tournaments: () => request<{ tournaments: Tournament[] }>('/api/tournaments').then(r => r.tournaments),
+  createTournament: (input: { name: string; bracketSize: 4 | 8 | 16; format: 'BO1' | 'BO3' | 'BO5'; seedingType: 'POWER_SEED' | 'RANDOM' | 'MANUAL'; teamIds: string[] }) => request<{ tournament: Tournament }>('/api/tournaments', { method: 'POST', body: JSON.stringify(input) }).then(r => r.tournament),
+  tournamentDetail: (id: string) => request<{ tournament: Tournament; matches: TournamentMatch[] }>(`/api/tournaments/${id}`),
+  updateTournamentMatch: (id: string, input: { matchId: string; winnerTeamId: string | null; team1Score: number; team2Score: number; forceUpdate?: boolean }) => request<{ success: boolean; matches: TournamentMatch[] }>(`/api/tournaments/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+  deleteTournament: (id: string) => request<{ success: boolean; id: string }>(`/api/tournaments/${id}`, { method: 'DELETE' }),
 };
-

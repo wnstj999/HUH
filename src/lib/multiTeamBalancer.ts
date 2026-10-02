@@ -30,7 +30,7 @@ export function getPlayerPositionScore(
   }
 
   // 레이팅이 없을 때 fallback: player.inhouseScore (4~15)
-  const base = calculatePowerRating(player, []).overallScore;
+  const base = calculatePowerRating(player, [], Date.now(), 'INHOUSE').overallScore;
   const isPref = player.positions.includes(position);
   return {
     score: isPref ? base : Math.round(base * 0.88),

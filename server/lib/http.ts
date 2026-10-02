@@ -51,9 +51,7 @@ export function requireMethod(req: VercelRequest, methods: string[]): void {
 }
 
 export async function requireAccess(req: VercelRequest): Promise<User | null> {
-  // Test deployments can be opened without an operator login. Keep this behind
-  // an explicit server-side flag so normal deployments remain protected.
-  if (process.env.HUH_DISABLE_AUTH === 'true') return null;
+  // Every data request requires a verified operator credential.
 
   const authorization = req.headers.authorization;
   if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
