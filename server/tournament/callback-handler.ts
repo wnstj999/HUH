@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { db } from '../server/lib/db.js';
-import { bodyAsObject, handler, HttpError, requireMethod } from '../server/lib/http.js';
-import { parseTournamentCallback } from '../server/tournament/result.js';
-import { collectTournamentResult } from '../server/tournament/collector.js';
+import { db } from '../lib/db.js';
+import { bodyAsObject, handler, HttpError, requireMethod } from '../lib/http.js';
+import { parseTournamentCallback } from './result.js';
+import { collectTournamentResult } from './collector.js';
 export default handler(async(req,res)=>{
  requireMethod(req,['POST']);
  const callback=parseTournamentCallback(bodyAsObject(req));

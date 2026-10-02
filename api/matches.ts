@@ -1,3 +1,5 @@
+import sessionHandler from '../server/tournament/session-handler.js';
+import type { VercelRequest, VercelResponse } from '../server/lib/http.js';
 import { requireManualMatch } from '../server/tournament/manual-guard.js';
 import { parseMatchPatch } from '../server/lib/match-input.js';
 import { assertDb, db } from '../server/lib/db.js';
@@ -6,7 +8,7 @@ import { mapMatch } from '../server/lib/mappers.js';
 
 const MATCH_SELECT = '*, inhouse_events(id,name), match_participants(*, players(id,display_name,inhouse_tier,inhouse_score))';
 
-export default handler(async (req, res) => {
+const existingHandler = handler(async (req, res) => {
   const id = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
 
   // 1. 단일 경기 ID가 지정된 경우 ([id].ts 로직)
@@ -45,3 +47,7 @@ export default handler(async (req, res) => {
   const row = assertDb(await client.from('inhouse_matches').select(MATCH_SELECT).eq('id', matchId).single());
   res.status(201).json({ match: mapMatch(row) });
 });
+
+export default function endpoint(req: VercelRequest, res: VercelResponse) {
+  return req.query.action === 'tournament-session' ? sessionHandler(req,res) : existingHandler(req,res);
+}

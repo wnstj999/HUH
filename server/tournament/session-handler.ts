@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { db, assertDb } from '../server/lib/db.js';
-import { bodyAsObject, handler, HttpError, requireMethod } from '../server/lib/http.js';
-import { resolveRiotKey } from '../server/lib/settings.js';
-import { RiotTournamentAdapter, tournamentConfiguration } from '../server/tournament/adapter.js';
-import { collectTournamentResult } from '../server/tournament/collector.js';
+import { db, assertDb } from '../lib/db.js';
+import { bodyAsObject, handler, HttpError, requireMethod } from '../lib/http.js';
+import { resolveRiotKey } from '../lib/settings.js';
+import { RiotTournamentAdapter, tournamentConfiguration } from './adapter.js';
+import { collectTournamentResult } from './collector.js';
 
 export default handler(async(req,res)=>{
  requireMethod(req,['GET','POST']);const client=db();
